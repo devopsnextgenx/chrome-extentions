@@ -1,0 +1,44 @@
+{
+    "manifest_version": 3,
+    "name": "Story Extractor",
+    "version": "1.0",
+    "description": "Extract images and markdown content from a selected div.",
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "downloads",
+        "downloads.shelf"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "images/icon16.png",
+            "48": "images/icon64.png",
+            "128": "images/icon128.png"
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "libs/turndown.js",
+                "content.js"
+            ],
+            "css": [
+                "styles/content.css"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "libs/turndown.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

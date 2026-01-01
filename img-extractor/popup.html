@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Img Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Img Extractor</h1>
+    </header>
+    
+    <div class="form-group">
+      <label for="defaultLocation">Default Location</label>
+      <input type="text" id="defaultLocation" placeholder="e.g., Images/Actress">
+    </div>
+
+    <div class="form-group">
+      <label for="actressName">Actress Name</label>
+      <input type="text" id="actressName" placeholder="Enter actress name">
+    </div>
+
+    <div class="button-group">
+      <button id="selectElementBtn" class="btn secondary">Select Element</button>
+      <button id="downloadBtn" class="btn primary" disabled>Download</button>
+    </div>
+
+    <div id="status" class="status-msg"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
