@@ -147,6 +147,22 @@
             color: var(--text-dim);
             text-align: center;
         }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.875rem;
+            color: var(--text-dim);
+            cursor: pointer;
+            user-select: none;
+            padding: 4px 0;
+        }
+
+        .checkbox-group input {
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
     </style>
 </head>
 
@@ -165,6 +181,11 @@
             <input type="text" id="fileName" placeholder="e.g., story_part1">
         </div>
     </div>
+
+    <label class="checkbox-group">
+        <input type="checkbox" id="directSave">
+        Direct Save & Download
+    </label>
 
     <div class="controls">
         <button id="startBtn">Start Selection</button>

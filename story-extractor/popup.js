@@ -6,7 +6,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     const threadNumberInput = document.getElementById('threadNumber');
     const fileNameInput = document.getElementById('fileName');
 
+    const directSaveCheckbox = document.getElementById('directSave');
+
     let isSelecting = false;
+
+    // Load saved settings
+    chrome.storage.local.get(['threadNumber', 'fileName', 'directSave'], (data) => {
+        if (data.threadNumber) threadNumberInput.value = data.threadNumber;
+        if (data.fileName) fileNameInput.value = data.fileName;
+        if (data.directSave !== undefined) directSaveCheckbox.checked = data.directSave;
+    });
+
+    // Save settings on change
+    [threadNumberInput, fileNameInput, directSaveCheckbox].forEach(el => {
+        el.addEventListener('input', () => {
+            chrome.storage.local.set({
+                threadNumber: threadNumberInput.value,
+                fileName: fileNameInput.value,
+                directSave: directSaveCheckbox.checked
+            });
+        });
+    });
 
     // Check current status when popup opens
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -41,6 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     extractBtn.addEventListener('click', async () => {
         const threadNumber = threadNumberInput.value.trim();
         const fileName = fileNameInput.value.trim();
+        const directSave = directSaveCheckbox.checked;
 
         if (!threadNumber || !fileName) {
             statusMsg.textContent = "Please enter Thread Number and File Name.";
@@ -54,50 +75,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         chrome.tabs.sendMessage(tab.id, { action: 'extract' }, async (response) => {
             if (response && response.data) {
                 const yamlStr = toYaml(response.data);
-                output.textContent = yamlStr;
-                Prism.highlightElement(output);
+
+                if (!directSave) {
+                    output.textContent = yamlStr;
+                    Prism.highlightElement(output);
+                } else {
+                    output.textContent = "Direct save enabled. Downloading...";
+                }
+
                 statusMsg.textContent = "Extracted! Starting downloads...";
 
                 try {
-                    // Download YAML
-                    const blob = new Blob([yamlStr], { type: 'text/yaml' });
-                    const blobUrl = URL.createObjectURL(blob);
-                    await chrome.downloads.download({
-                        url: blobUrl,
-                        filename: `${threadNumber}/ymls/${fileName}.yml`,
-                        conflictAction: 'overwrite'
-                    });
-                    URL.revokeObjectURL(blobUrl);
-
-                    // Download Images
-                    const images = response.data.images || [];
-                    for (let i = 0; i < images.length; i++) {
-                        const imgUrl = images[i];
-                        let ext = imgUrl.split('.').pop().split(/[?#]/)[0] || 'jpg';
-                        if (ext.length > 4) ext = 'jpg'; // Basic fallback for long query params
-
-                        const filename = `${threadNumber}/imgs/${i + 1}.${ext}`;
-                        await chrome.downloads.download({
-                            url: imgUrl,
-                            filename: filename,
-                            conflictAction: 'overwrite'
-                        });
-
-                        if (i === 0) {
-                            const thumbFilename = `${threadNumber}/imgs/thumbnail.${ext}`;
-                            await chrome.downloads.download({
-                                url: imgUrl,
-                                filename: thumbFilename,
-                                conflictAction: 'overwrite'
-                            });
+                    chrome.runtime.sendMessage({
+                        action: 'downloadAll',
+                        data: {
+                            threadNumber,
+                            fileName,
+                            yamlStr,
+                            images: response.data.images || []
                         }
-                    }
-
-                    statusMsg.textContent = `Success! Saved to folder: ${threadNumber}`;
-                    statusMsg.style.color = "#4ade80";
+                    }, (downloadResponse) => {
+                        if (downloadResponse && downloadResponse.success) {
+                            statusMsg.textContent = `Success! Saved to folder: ${threadNumber}`;
+                            statusMsg.style.color = "#4ade80";
+                        } else {
+                            statusMsg.textContent = "Download failed: " + (downloadResponse?.error || "Unknown error");
+                            statusMsg.style.color = "#ef4444";
+                        }
+                    });
                 } catch (err) {
-                    console.error('Download failed:', err);
-                    statusMsg.textContent = "Download failed. Check console.";
+                    console.error('Message failed:', err);
+                    statusMsg.textContent = "Request failed. Check console.";
                     statusMsg.style.color = "#ef4444";
                 }
             } else if (response && response.error) {

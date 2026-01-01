@@ -50,14 +50,54 @@
             chrome.runtime.sendMessage({ action: 'selectionCanceled' });
         });
 
-        uiContainer.querySelector('#story-ui-extract').addEventListener('click', () => {
+        uiContainer.querySelector('#story-ui-extract').addEventListener('click', async () => {
             if (selectedElement) {
                 const data = extractData(selectedElement);
-                showResult(data);
-                isSelecting = false;
-                removeUI();
-                clearHighlighter();
-                chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+
+                // Read settings from storage
+                chrome.storage.local.get(['threadNumber', 'fileName', 'directSave'], async (settings) => {
+                    const threadNumber = settings.threadNumber || 'unknown';
+                    const fileName = settings.fileName || 'page_1';
+                    const directSave = settings.directSave || false;
+                    const yamlStr = toYaml(data);
+
+                    if (directSave) {
+                        try {
+                            updateUIStatus("Saving and downloading...");
+
+                            chrome.runtime.sendMessage({
+                                action: 'downloadAll',
+                                data: {
+                                    threadNumber,
+                                    fileName,
+                                    yamlStr,
+                                    images: data.images || []
+                                }
+                            }, (downloadResponse) => {
+                                if (downloadResponse && downloadResponse.success) {
+                                    updateUIStatus("Success! Check downloads folder.");
+                                    setTimeout(() => {
+                                        isSelecting = false;
+                                        removeUI();
+                                        clearHighlighter();
+                                        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+                                    }, 2000);
+                                } else {
+                                    updateUIStatus("Error: " + (downloadResponse?.error || "Download failed."));
+                                }
+                            });
+                        } catch (err) {
+                            console.error('Download failed:', err);
+                            updateUIStatus("Error: Download failed.");
+                        }
+                    } else {
+                        showResult(data);
+                        isSelecting = false;
+                        removeUI();
+                        clearHighlighter();
+                        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+                    }
+                });
             }
         });
     }
