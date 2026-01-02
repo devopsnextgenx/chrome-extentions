@@ -15,7 +15,7 @@ async function handleDownloadAll({ threadNumber, fileName, yamlStr, images }) {
     const safeThread = sanitize(threadNumber) || 'unknown';
     const safeFile = sanitize(fileName) || '1';
 
-    const rootFolder = `thread-${safeThread}`;
+    const rootFolder = `stories/thread-${safeThread}`;
     const yamlDir = `${rootFolder}/ymls`;
     const imgDir = `${rootFolder}/imgs`;
     const yamlName = `page_${safeFile}.yml`;

@@ -52,7 +52,7 @@
       if (selectedElement) {
         chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
           initiateDownload({
-            defaultLocation: data.defaultLocation || '',
+            defaultLocation: data.defaultLocation || 'actresses',
             actressName: data.actressName || ''
           });
           isSelecting = false;
