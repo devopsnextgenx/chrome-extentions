@@ -133,6 +133,8 @@ function resolveFullSizeUrl(url) {
     if (parsedUrl.hostname.includes('telugupeople.com') && path.includes('Thumbnails')) {
         path = path.replace('Thumbnails', '');
     }
+
+    // for https://cinejosh.com/.../thumb/... convert to https://cinejosh.com/.../normal/...
     if (parsedUrl.hostname.includes('cinejosh.com') && path.includes('thumb')) {
         path = path.replace('thumb', 'normal');
     }
