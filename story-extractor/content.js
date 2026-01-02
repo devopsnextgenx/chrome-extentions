@@ -249,6 +249,10 @@
             if (currentContent.trim() || currentImages.length > 0) {
                 const wordCount = currentContent.trim() ? currentContent.trim().split(/\s+/).length : 0;
                 const charCount = currentContent.length;
+                let content = currentContent.replace(/\[\]\(.+\)/g, '').trim();
+                content = content.replace(/\]\(.+\)/g, '').trim();
+                content = content.replace(/\[\*\*/g, '\*\*').trim();
+                content = content.replace(/(\n(\s+))/g, '\n').trim();
                 posts.push({
                     post_id: postId++,
                     is_comment: false,
@@ -256,7 +260,7 @@
                         word_count: wordCount,
                         char_count: charCount
                     },
-                    content: currentContent.trim(),
+                    content: content.trim(),
                     images: [...currentImages]
                 });
                 currentContent = '';
