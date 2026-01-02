@@ -308,6 +308,7 @@
 
         return {
             metadata: {
+                title: document.title,
                 extracted_at: extractedAt,
                 page_number: 1,
                 source_url: window.location.href,
