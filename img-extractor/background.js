@@ -138,6 +138,26 @@ function resolveFullSizeUrl(url) {
     if (parsedUrl.hostname.includes('cinejosh.com') && path.includes('thumb')) {
         path = path.replace('thumb', 'normal');
     }
+
+    // if domain kollywoodzone.com then convert https://www.kollywoodzone.com/boxoffice/wp-content/uploads/cache/2022/06/Sexy-Vithika-Sheru-Traditional-Photos-32/1154633772.jpg to https://www.kollywoodzone.com/boxoffice/wp-content/uploads/2022/06/Sexy-Vithika-Sheru-Traditional-Photos-32.jpg
+    if (
+        parsedUrl.hostname.includes('kollywoodzone.com') &&
+        path.includes('/cache/')
+    ) {
+        const parts = path.split('/');
+
+        // Find "cache" index
+        const cacheIndex = parts.indexOf('cache');
+
+        if (cacheIndex !== -1 && parts.length > cacheIndex + 3) {
+            const year = parts[cacheIndex + 1];
+            const month = parts[cacheIndex + 2];
+            const imageName = parts[cacheIndex + 3]; // folder name = actual image name
+
+            path = `/boxoffice/wp-content/uploads/${year}/${month}/${imageName}.jpg`;
+        }
+    }
+
     console.log('Resolved URL:', parsedUrl.origin + path + parsedUrl.search);
 
     return parsedUrl.origin + path + parsedUrl.search;
