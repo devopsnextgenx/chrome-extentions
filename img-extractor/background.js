@@ -1,23 +1,43 @@
 // pendingDownloads map and onDeterminingFilename listener removed to avoid conflicts with other extensions.
 // Filenames are now passed directly to chrome.downloads.download().
 
+const activeBatches = new Set();
+const manualResumes = new Map();
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'process-downloads') {
-        startDownloading(message.urls, message.options, message.tabUrl, sender.tab.id);
+        const batchId = Date.now().toString();
+        activeBatches.add(batchId);
+        startDownloading(message.urls, message.options, message.tabUrl, sender.tab.id, batchId);
+    } else if (message.action === 'cancel-download') {
+        activeBatches.delete(message.batchId);
+        const resume = manualResumes.get(message.batchId);
+        if (resume) resume(); // Release pause if waiting
+        console.log(`Cancellation requested for batch: ${message.batchId}`);
+    } else if (message.action === 'resume-download') {
+        const resume = manualResumes.get(message.batchId);
+        if (resume) {
+            resume();
+            manualResumes.delete(message.batchId);
+            console.log(`Manual resume for batch: ${message.batchId}`);
+        }
     }
 });
 
-async function startDownloading(urls, options, tabUrl, tabId) {
+async function startDownloading(urls, options, tabUrl, tabId, batchId) {
     const total = urls.length;
     let downloadedCount = 0;
+    let firstFailedUrl = null;
 
     const updateUI = () => {
         chrome.tabs.sendMessage(tabId, {
             action: 'update-progress',
+            batchId: batchId,
             progress: {
                 total: total,
                 downloaded: downloadedCount,
-                pending: total - downloadedCount
+                pending: total - downloadedCount,
+                firstFailedUrl: firstFailedUrl
             }
         });
     };
@@ -26,6 +46,10 @@ async function startDownloading(urls, options, tabUrl, tabId) {
 
     for (const url of urls) {
         try {
+            if (!activeBatches.has(batchId)) {
+                console.log(`Batch ${batchId} was cancelled.`);
+                break;
+            }
             const finalUrl = resolveFullSizeUrl(url);
             const folderPath = generateFolderPath(finalUrl, tabUrl, options);
             const fileName = getFileName(finalUrl);
@@ -61,12 +85,41 @@ async function startDownloading(urls, options, tabUrl, tabId) {
             downloadedCount++;
             updateUI();
 
-            // Longer delay to avoid anti-spam and security prompts
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Special logic: Pause for 15 seconds after the VERY FIRST image download
+            if (downloadedCount === 1 && total > 1) {
+                console.log(`Batch ${batchId}: First image downloaded. Pausing for 15 seconds...`);
+                chrome.tabs.sendMessage(tabId, {
+                    action: 'waiting-to-resume',
+                    batchId: batchId,
+                    timeout: 15
+                });
+
+                await new Promise(resolve => {
+                    const timeoutId = setTimeout(() => {
+                        manualResumes.delete(batchId);
+                        resolve();
+                    }, 15000);
+                    manualResumes.set(batchId, () => {
+                        clearTimeout(timeoutId);
+                        resolve();
+                    });
+                });
+
+                // Re-check cancellation after pause
+                if (!activeBatches.has(batchId)) break;
+            } else {
+                // Regular delay between other images
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         } catch (err) {
             console.error('Download failed for', url, err);
+            if (!firstFailedUrl) {
+                firstFailedUrl = url;
+            }
+            updateUI();
         }
     }
+    activeBatches.delete(batchId);
 }
 
 /**
@@ -158,9 +211,15 @@ function resolveFullSizeUrl(url) {
         }
     }
 
-    console.log('Resolved URL:', parsedUrl.origin + path + parsedUrl.search);
+    let origin = parsedUrl.origin;
+    if (parsedUrl.origin.includes('media1')) {
+        // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
+        origin = parsedUrl.origin.replace('media1', 'img');
+    }
 
-    return parsedUrl.origin + path + parsedUrl.search;
+    console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
+
+    return origin + path + parsedUrl.search;
 }
 
 function generateFolderPath(imgUrl, tabUrl, options) {

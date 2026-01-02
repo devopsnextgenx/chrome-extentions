@@ -3,7 +3,8 @@
   let selectedElement = null;
   let isSelecting = false;
   let uiContainer = null;
-  let progressOverlay = null;
+  let progressContainer = null;
+  let batchCards = new Map();
 
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -21,7 +22,9 @@
     } else if (request.action === 'getStatus') {
       if (sendResponse) sendResponse({ isSelecting, hasSelection: !!selectedElement });
     } else if (request.action === 'update-progress') {
-      updateProgress(request.progress);
+      updateProgress(request);
+    } else if (request.action === 'waiting-to-resume') {
+      handleWaitingToResume(request);
     }
   });
 
@@ -153,8 +156,6 @@
 
     if (imageUrls.length === 0) return;
 
-    showOverlay();
-
     chrome.runtime.sendMessage({
       action: 'process-downloads',
       urls: imageUrls,
@@ -163,52 +164,178 @@
     });
   }
 
-  function showOverlay() {
-    if (!progressOverlay) {
-      progressOverlay = document.createElement('div');
-      progressOverlay.id = 'img-extractor-progress-overlay';
-      progressOverlay.innerHTML = `
-                <button class="img-btn-close">&times;</button>
-                <h2>Downloading Images</h2>
-                <div class="img-progress-container">
-                    <div class="img-progress-bar-bg">
-                        <div class="img-progress-bar-fill" id="img-progress-fill"></div>
-                    </div>
-                </div>
-                <div class="img-stats">
-                    <span>Downloaded: <b id="img-count-downloaded">0</b></span>
-                    <span>Pending: <b id="img-count-pending">0</b></span>
-                </div>
-                <div class="img-stats" style="margin-top: 4px;">
-                    <span>Total: <b id="img-count-total">0</b></span>
-                </div>
-            `;
-      document.body.appendChild(progressOverlay);
-      progressOverlay.querySelector('.img-btn-close').onclick = () => {
-        progressOverlay.style.display = 'none';
-      };
+  function ensureProgressContainer() {
+    if (!progressContainer) {
+      progressContainer = document.createElement('div');
+      progressContainer.id = 'img-extractor-progress-container';
+      document.body.appendChild(progressContainer);
     }
-    progressOverlay.style.display = 'block';
   }
 
-  function updateProgress(progress) {
-    if (!progressOverlay) return;
+  function createBatchCard(batchId) {
+    ensureProgressContainer();
+    const card = document.createElement('div');
+    card.className = 'img-batch-card';
+    card.id = `batch-${batchId}`;
+    card.innerHTML = `
+        <div class="img-batch-header">
+            <span>Downloading Images</span>
+            <div class="img-batch-actions">
+                <button class="img-batch-continue" id="continue-${batchId}" style="display: none;" title="Continue Now">Continue</button>
+                <button class="img-batch-cancel" title="Cancel this batch">&times;</button>
+            </div>
+        </div>
+        <div class="img-progress-container">
+            <div class="img-progress-bar-bg">
+                <div class="img-progress-bar-fill" id="fill-${batchId}"></div>
+            </div>
+        </div>
+        <div class="img-stats">
+            <span>Progress: <b id="text-${batchId}">0/0</b></span>
+            <span id="status-${batchId}">Downloading...</span>
+        </div>
+        <div id="countdown-container-${batchId}" class="img-countdown" style="display: none;">
+            Resuming in <b id="countdown-${batchId}">15</b>s...
+        </div>
+        <div id="failed-container-${batchId}" class="img-failed-url-container" style="display: none;">
+            <div class="img-failed-url-label">First Failed URL:</div>
+            <div class="img-failed-url-row">
+                <span id="failed-url-${batchId}" class="img-failed-url-text"></span>
+                <button id="copy-${batchId}" class="img-copy-btn" title="Copy URL">Copy</button>
+            </div>
+        </div>
+    `;
+    progressContainer.appendChild(card);
 
-    const fill = document.getElementById('img-progress-fill');
-    const downloaded = document.getElementById('img-count-downloaded');
-    const pending = document.getElementById('img-count-pending');
-    const total = document.getElementById('img-count-total');
+    card.querySelector('.img-batch-cancel').onclick = () => {
+      chrome.runtime.sendMessage({ action: 'cancel-download', batchId: batchId });
+      card.querySelector('#status-' + batchId).textContent = 'Cancelling...';
+      card.classList.add('cancelling');
+      card.querySelector(`#continue-${batchId}`).style.display = 'none';
+      card.querySelector(`#countdown-container-${batchId}`).style.display = 'none';
+    };
 
-    if (!fill || !downloaded || !pending || !total) return;
+    card.querySelector('.img-batch-continue').onclick = () => {
+      chrome.runtime.sendMessage({ action: 'resume-download', batchId: batchId });
+      card.querySelector(`#continue-${batchId}`).style.display = 'none';
+      card.querySelector(`#countdown-container-${batchId}`).style.display = 'none';
+      card.querySelector('#status-' + batchId).textContent = 'Resuming...';
+    };
 
-    const percent = (progress.downloaded / progress.total) * 100;
-    fill.style.width = `${percent}%`;
-    downloaded.textContent = progress.downloaded;
-    pending.textContent = progress.pending;
-    total.textContent = progress.total;
+    card.querySelector(`#copy-${batchId}`).onclick = () => {
+      const urlText = card.querySelector(`#failed-url-${batchId}`).textContent;
+      navigator.clipboard.writeText(urlText).then(() => {
+        const copyBtn = card.querySelector(`#copy-${batchId}`);
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = originalText;
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      });
+    };
+
+    return card;
+  }
+
+  function updateProgress(message) {
+    const { batchId, progress } = message;
+    let card = batchCards.get(batchId);
+
+    if (!card) {
+      card = createBatchCard(batchId);
+      batchCards.set(batchId, card);
+    }
+
+    const fill = card.querySelector(`#fill-${batchId}`);
+    const text = card.querySelector(`#text-${batchId}`);
+    const status = card.querySelector(`#status-${batchId}`);
+
+    if (fill && text) {
+      const percent = (progress.downloaded / progress.total) * 100;
+      fill.style.width = `${percent}%`;
+      text.textContent = `${progress.downloaded}/${progress.total}`;
+
+      // Hide pause UI if we moved past the first image
+      if (progress.downloaded > 1) {
+        const continueBtn = card.querySelector(`#continue-${batchId}`);
+        const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+        if (continueBtn) continueBtn.style.display = 'none';
+        if (countdownContainer) countdownContainer.style.display = 'none';
+        if (status.textContent === 'Paused') status.textContent = 'Downloading...';
+      }
+
+      if (progress.firstFailedUrl) {
+        const failedContainer = card.querySelector(`#failed-container-${batchId}`);
+        const failedUrlText = card.querySelector(`#failed-url-${batchId}`);
+        if (failedContainer && failedUrlText) {
+          failedUrlText.textContent = progress.firstFailedUrl;
+          failedContainer.style.display = 'block';
+        }
+      }
+
+      if (progress.downloaded === progress.total) {
+        status.textContent = 'Completed';
+        card.classList.add('completed');
+        // Remove card after some time
+        setTimeout(() => {
+          card.classList.add('fade-out');
+          setTimeout(() => {
+            card.remove();
+            batchCards.delete(batchId);
+            if (batchCards.size === 0 && progressContainer) {
+              progressContainer.remove();
+              progressContainer = null;
+            }
+          }, 500);
+        }, 3000);
+      }
+    }
+  }
+
+  function handleWaitingToResume(message) {
+    const { batchId, timeout } = message;
+    const card = batchCards.get(batchId);
+    if (!card) return;
+
+    const continueBtn = card.querySelector(`#continue-${batchId}`);
+    const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+    const countdownText = card.querySelector(`#countdown-${batchId}`);
+    const status = card.querySelector(`#status-${batchId}`);
+
+    status.textContent = 'Paused';
+    if (continueBtn) continueBtn.style.display = 'block';
+    if (countdownContainer) countdownContainer.style.display = 'block';
+
+    let timeLeft = timeout;
+    if (countdownText) countdownText.textContent = timeLeft;
+
+    const intervalId = setInterval(() => {
+      timeLeft--;
+      if (timeLeft <= 0 || !batchCards.has(batchId) || card.classList.contains('cancelling') || (continueBtn && continueBtn.style.display === 'none')) {
+        clearInterval(intervalId);
+        if (timeLeft <= 0) {
+          if (continueBtn) continueBtn.style.display = 'none';
+          if (countdownContainer) countdownContainer.style.display = 'none';
+        }
+        return;
+      }
+      if (countdownText) countdownText.textContent = timeLeft;
+    }, 1000);
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape' && isSelecting) {
+      isSelecting = false;
+      removeUI();
+      clearHighlighter();
+      chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+    }
   }
 
   document.addEventListener('mouseover', onMouseOver, true);
   document.addEventListener('mouseout', handleMouseOut, true);
   document.addEventListener('click', onClick, true);
+  document.addEventListener('keydown', onKeyDown, true);
 })();
