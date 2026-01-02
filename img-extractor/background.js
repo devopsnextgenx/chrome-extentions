@@ -44,16 +44,18 @@ async function startDownloading(urls, options, tabUrl, tabId) {
 
             console.log('Downloading to path:', finalPath);
 
-
             try {
-                await chrome.downloads.download({
-                    url: finalUrl,
-                    filename: finalPath,
-                    conflictAction: 'uniquify',
-                    saveAs: false
-                });
-            } catch (downloadErr) {
-                throw downloadErr;
+                await downloadFile(finalUrl, finalPath);
+            } catch (err) {
+                // console.warn(`Initial download failed for ${finalUrl}, trying fallback if applicable.`, err);
+                if (finalUrl.includes('imgcdn')) {
+                    const fallbackUrl = finalUrl.replace('imgcdn', 'img');
+                    console.log(`Retrying with fallback URL: ${fallbackUrl}`);
+                    await downloadFile(fallbackUrl, finalPath);
+                } else {
+                    console.error(`Download failed for ${finalUrl}`, err);
+                    throw err; // Re-throw if no fallback
+                }
             }
 
             downloadedCount++;
@@ -65,6 +67,44 @@ async function startDownloading(urls, options, tabUrl, tabId) {
             console.error('Download failed for', url, err);
         }
     }
+}
+
+/**
+ * Robust download wrapper that waits for completion or failure.
+ */
+function downloadFile(url, filename) {
+    return new Promise((resolve, reject) => {
+        chrome.downloads.download({
+            url: url,
+            filename: filename,
+            conflictAction: 'uniquify',
+            saveAs: false
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                return reject(new Error(chrome.runtime.lastError.message));
+            }
+
+            const checkStatus = (delta) => {
+                if (delta.id !== downloadId) return;
+
+                if (delta.state) {
+                    if (delta.state.current === 'complete') {
+                        chrome.downloads.onChanged.removeListener(checkStatus);
+                        resolve(downloadId);
+                    } else if (delta.state.current === 'interrupted') {
+                        chrome.downloads.onChanged.removeListener(checkStatus);
+                        // Get the error message for better logging
+                        chrome.downloads.search({ id: downloadId }, (items) => {
+                            const error = items && items[0] && items[0].error ? items[0].error : 'Unknown error';
+                            reject(new Error(`Download interrupted: ${error}`));
+                        });
+                    }
+                }
+            };
+
+            chrome.downloads.onChanged.addListener(checkStatus);
+        });
+    });
 }
 
 function resolveFullSizeUrl(url) {
@@ -88,6 +128,15 @@ function resolveFullSizeUrl(url) {
     fileName = fileName.replace(/^th_/i, '');
     segments[segments.length - 1] = fileName;
     path = segments.join('/');
+
+    // for https://telugupeople.com/uploads/SpiceGallery/Thumbnails/201501/vithi%20(19).JPG convert to https://telugupeople.com/uploads/SpiceGallery/201501/vithi%20(19).JPG
+    if (parsedUrl.hostname.includes('telugupeople.com') && path.includes('Thumbnails')) {
+        path = path.replace('Thumbnails', '');
+    }
+    if (parsedUrl.hostname.includes('cinejosh.com') && path.includes('thumb')) {
+        path = path.replace('thumb', 'normal');
+    }
+    console.log('Resolved URL:', parsedUrl.origin + path + parsedUrl.search);
 
     return parsedUrl.origin + path + parsedUrl.search;
 }
