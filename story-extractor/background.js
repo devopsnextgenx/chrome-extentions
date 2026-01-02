@@ -1,14 +1,4 @@
-// Map to track download IDs and their desired destination paths
-const idToPath = new Map();
-
-// Listen for the chrome.downloads.onDeterminingFilename event (ONLY ONE LISTENER ALLOWED)
-chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-    if (idToPath.has(item.id)) {
-        const suggestedPath = idToPath.get(item.id);
-        idToPath.delete(item.id);
-        suggest({ filename: suggestedPath, conflictAction: 'overwrite' });
-    }
-});
+// Map to track download IDs and their desired destination paths is no longer needed since we pass filename to download()
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'downloadAll') {
@@ -36,9 +26,10 @@ async function handleDownloadAll({ threadNumber, fileName, yamlStr, images }) {
 
     const yamlId = await chrome.downloads.download({
         url: yamlDataUrl,
+        filename: yamlPath,
+        conflictAction: 'overwrite',
         saveAs: false
     });
-    idToPath.set(yamlId, yamlPath);
 
     // 2. Download Images
     for (let i = 0; i < images.length; i++) {
@@ -58,17 +49,19 @@ async function handleDownloadAll({ threadNumber, fileName, yamlStr, images }) {
 
         const imgId = await chrome.downloads.download({
             url: imgUrl,
+            filename: imgPath,
+            conflictAction: 'overwrite',
             saveAs: false
         });
-        idToPath.set(imgId, imgPath);
 
         // First image as thumbnail.jpg
         if (i === 0) {
             const thumbId = await chrome.downloads.download({
                 url: imgUrl,
+                filename: `${imgDir}/thumbnail.jpg`,
+                conflictAction: 'overwrite',
                 saveAs: false
             });
-            idToPath.set(thumbId, `${imgDir}/thumbnail.jpg`);
         }
 
         // Small delay

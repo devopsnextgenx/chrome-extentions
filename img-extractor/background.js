@@ -1,12 +1,5 @@
-const pendingDownloads = new Map();
-
-chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-    if (pendingDownloads.has(item.url)) {
-        const suggestedPath = pendingDownloads.get(item.url);
-        pendingDownloads.delete(item.url);
-        suggest({ filename: suggestedPath, conflictAction: 'uniquify' });
-    }
-});
+// pendingDownloads map and onDeterminingFilename listener removed to avoid conflicts with other extensions.
+// Filenames are now passed directly to chrome.downloads.download().
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'process-downloads') {
@@ -51,8 +44,6 @@ async function startDownloading(urls, options, tabUrl, tabId) {
 
             console.log('Downloading to path:', finalPath);
 
-            // Store the desired path for onDeterminingFilename to pick up
-            pendingDownloads.set(finalUrl, finalPath);
 
             try {
                 await chrome.downloads.download({
@@ -62,8 +53,6 @@ async function startDownloading(urls, options, tabUrl, tabId) {
                     saveAs: false
                 });
             } catch (downloadErr) {
-                // Remove from pending if the initial call fails
-                pendingDownloads.delete(finalUrl);
                 throw downloadErr;
             }
 
