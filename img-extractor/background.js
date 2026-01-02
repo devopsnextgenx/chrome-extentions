@@ -222,7 +222,10 @@ function resolveFullSizeUrl(url) {
             origin = parsedUrl.origin.replace('media1', 'img');
         }
     }
-
+    if (parsedUrl.origin.includes('idlebrain')) {
+        path = path.replace('thumb-', 'newpg-');
+    }
+    // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
 
     return origin + path + parsedUrl.search;
