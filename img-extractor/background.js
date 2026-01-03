@@ -215,11 +215,19 @@ function resolveFullSizeUrl(url) {
     if (parsedUrl.origin.includes('ragalahari')) {
         if (parsedUrl.origin.includes('szcdn1')) {
             // https://szcdn1.ragalahari.com/mar2012/starzone/tamanna_endukante_premanta/tamanna_endukante_premanta1t.jpg
-            origin = parsedUrl.origin.replace('szcdn1', 'img');
+            origin = parsedUrl.origin.replace('szcdn1', 'starzone');
+        }
+        if (parsedUrl.origin.includes('szcdn')) {
+            // https://szcdn1.ragalahari.com/mar2012/starzone/tamanna_endukante_premanta/tamanna_endukante_premanta1t.jpg
+            origin = parsedUrl.origin.replace('szcdn', 'starzone');
         }
         if (parsedUrl.origin.includes('media1')) {
             // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
             origin = parsedUrl.origin.replace('media1', 'img');
+        }
+        if (parsedUrl.origin.includes('media')) {
+            // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
+            origin = parsedUrl.origin.replace('media', 'img');
         }
     }
     if (parsedUrl.origin.includes('idlebrain')) {

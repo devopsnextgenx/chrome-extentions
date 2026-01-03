@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Image Source</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Fix Image Source</h1>
+      <div class="toggle-container">
+        <label class="switch">
+          <input type="checkbox" id="globalToggle">
+          <span class="slider round"></span>
+        </label>
+        <span id="toggleStatus">Enabled</span>
+      </div>
+    </header>
+
+    <div class="current-domain">
+      <span>Domain: </span>
+      <b id="domainDisplay">Detecting...</b>
+    </div>
+
+    <section class="config-section">
+      <h3>Add New Rule</h3>
+      <div class="input-group">
+        <label>Domain Pattern (Regex)</label>
+        <input type="text" id="domainPattern" placeholder="e.g. ragalahari.com">
+      </div>
+      
+      <div id="replacementsContainer">
+        <div class="replacement-row">
+          <input type="text" class="search-pattern" placeholder="Search (e.g. szcdn)">
+          <input type="text" class="replace-pattern" placeholder="Replace (e.g. starzone)">
+        </div>
+        <div class="replacement-row">
+          <input type="text" class="search-pattern" placeholder="Search">
+          <input type="text" class="replace-pattern" placeholder="Replace">
+        </div>
+        <div class="replacement-row">
+          <input type="text" class="search-pattern" placeholder="Search">
+          <input type="text" class="replace-pattern" placeholder="Replace">
+        </div>
+      </div>
+
+      <button id="addRuleBtn" class="primary-btn">Add Rule</button>
+    </section>
+
+    <section class="rules-section">
+      <h3>Saved Rules</h3>
+      <ul id="rulesList"></ul>
+    </section>
+
+    <div class="actions">
+      <button id="fixImagesBtn" class="success-btn">Fix Images</button>
+      <button id="revertImagesBtn" class="warn-btn">Revert Images</button>
+    </div>
+
+    <div id="statusMessage" class="status-message"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
