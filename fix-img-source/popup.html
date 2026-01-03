@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fix Image Source</title>
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <header>
@@ -30,7 +32,12 @@
         <label>Domain Pattern (Regex)</label>
         <input type="text" id="domainPattern" placeholder="e.g. ragalahari.com">
       </div>
-      
+
+      <div class="input-group">
+        <label>Restrict to Container IDs (comma-separated, optional)</label>
+        <input type="text" id="containerIds" placeholder="e.g. galleries_panel, galdiv">
+      </div>
+
       <div id="replacementsContainer">
         <div class="replacement-row">
           <input type="text" class="search-pattern" placeholder="Search (e.g. szcdn)">
@@ -63,4 +70,5 @@
   </div>
   <script src="popup.js"></script>
 </body>
+
 </html>

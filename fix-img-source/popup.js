@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const revertImagesBtn = document.getElementById('revertImagesBtn');
     const statusMessage = document.getElementById('statusMessage');
     const replacementsContainer = document.getElementById('replacementsContainer');
+    const containerIdsInput = document.getElementById('containerIds');
 
     let currentTab = null;
     let savedRules = [];
@@ -35,20 +36,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!domainPatternInput.value) {
                     domainPatternInput.value = url.hostname;
 
-                    // Special case: pre-fill ragalahari/raagalahari defaults if on that site
                     const isRagalahari = url.hostname.includes('ragalahari.com');
                     const isRaagalahari = url.hostname.includes('raagalahari.com');
 
                     if (isRagalahari || isRaagalahari) {
+                        domainPatternInput.value = isRaagalahari ? 'raagalahari.com' : 'ragalahari.com';
+                        containerIdsInput.value = 'galleries_panel, galdiv';
                         const domainSuffix = isRaagalahari ? 'raagalahari.com' : 'ragalahari.com';
                         const rows = replacementsContainer.querySelectorAll('.replacement-row');
                         if (rows.length >= 3) {
                             rows[0].querySelector('.search-pattern').value = `szcdn.${domainSuffix}`;
-                            rows[0].querySelector('.replace-pattern').value = isRaagalahari ? `starzone.${domainSuffix}` : `starzone.${domainSuffix}`;
+                            rows[0].querySelector('.replace-pattern').value = `starzone.ragalahari.com`;
                             rows[1].querySelector('.search-pattern').value = `imgcdn.${domainSuffix}`;
-                            rows[1].querySelector('.replace-pattern').value = `img.${domainSuffix}`;
-                            rows[2].querySelector('.search-pattern').value = `media1.${domainSuffix}`;
-                            rows[2].querySelector('.replace-pattern').value = `img.${domainSuffix}`;
+                            rows[1].querySelector('.replace-pattern').value = `img.ragalahari.com`;
+                            rows[2].querySelector('.search-pattern').value = `www.${domainSuffix}`;
+                            rows[2].querySelector('.replace-pattern').value = `starzone.ragalahari.com`;
                         }
                     }
                 }
@@ -94,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newRule = {
             id: Date.now().toString(),
             domainPattern,
+            containerIds: containerIdsInput.value.split(',').map(s => s.trim()).filter(s => s),
             replacements
         };
 
@@ -166,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function clearInputs() {
         domainPatternInput.value = '';
+        containerIdsInput.value = '';
         const rows = replacementsContainer.querySelectorAll('.replacement-row');
         rows.forEach(row => {
             row.querySelector('.search-pattern').value = '';

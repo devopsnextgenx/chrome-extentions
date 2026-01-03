@@ -84,26 +84,40 @@ function fixSingleElement(el) {
     let newSrc = originalSrc;
     let newSrcset = originalSrcset;
     let newDataSrcset = originalDataSrcset;
+    let newDataSrc = el.getAttribute('data-src');
     let appliedChanges = false;
 
     currentRules.forEach(rule => {
         try {
             const regex = new RegExp(rule.domainPattern, 'i');
             if (regex.test(currentDomain)) {
+                // Check container IDs if specified
+                if (rule.containerIds && rule.containerIds.length > 0) {
+                    let isWithinContainer = false;
+                    for (const id of rule.containerIds) {
+                        if (el.closest(`#${id}`)) {
+                            isWithinContainer = true;
+                            break;
+                        }
+                    }
+                    if (!isWithinContainer) return; // Skip this rule if not in container
+                }
+
                 rule.replacements.forEach(rep => {
                     if (rep.search && rep.replace) {
-                        if (newSrc && newSrc.includes(rep.search)) {
-                            newSrc = newSrc.split(rep.search).join(rep.replace);
-                            appliedChanges = true;
-                        }
-                        if (newSrcset && newSrcset.includes(rep.search)) {
-                            newSrcset = newSrcset.split(rep.search).join(rep.replace);
-                            appliedChanges = true;
-                        }
-                        if (newDataSrcset && newDataSrcset.includes(rep.search)) {
-                            newDataSrcset = newDataSrcset.split(rep.search).join(rep.replace);
-                            appliedChanges = true;
-                        }
+                        const doReplace = (val) => val && val.includes(rep.search) ? val.split(rep.search).join(rep.replace) : val;
+
+                        const updatedSrc = doReplace(newSrc);
+                        if (updatedSrc !== newSrc) { newSrc = updatedSrc; appliedChanges = true; }
+
+                        const updatedSrcset = doReplace(newSrcset);
+                        if (updatedSrcset !== newSrcset) { newSrcset = updatedSrcset; appliedChanges = true; }
+
+                        const updatedDataSrcset = doReplace(newDataSrcset);
+                        if (updatedDataSrcset !== newDataSrcset) { newDataSrcset = updatedDataSrcset; appliedChanges = true; }
+
+                        const updatedDataSrc = doReplace(newDataSrc);
+                        if (updatedDataSrc !== newDataSrc) { newDataSrc = updatedDataSrc; appliedChanges = true; }
                     }
                 });
             }
@@ -114,19 +128,26 @@ function fixSingleElement(el) {
 
     let modified = false;
     if (appliedChanges) {
-        if (newSrc && el.src !== newSrc) {
+        const normalize = (u) => u ? u.replace(/^https?:/, '') : u;
+
+        if (newSrc && normalize(el.src) !== normalize(newSrc)) {
             console.log(`[FixImgSource] Fixing ${el.tagName} src: ${el.src} -> ${newSrc}`);
             el.src = newSrc;
             modified = true;
         }
-        if (newSrcset && el.getAttribute('srcset') !== newSrcset) {
+        if (newSrcset && normalize(el.getAttribute('srcset')) !== normalize(newSrcset)) {
             console.log(`[FixImgSource] Fixing ${el.tagName} srcset: ${el.getAttribute('srcset')} -> ${newSrcset}`);
             el.setAttribute('srcset', newSrcset);
             modified = true;
         }
-        if (newDataSrcset && el.getAttribute('data-srcset') !== newDataSrcset) {
+        if (newDataSrcset && normalize(el.getAttribute('data-srcset')) !== normalize(newDataSrcset)) {
             console.log(`[FixImgSource] Fixing ${el.tagName} data-srcset: ${el.getAttribute('data-srcset')} -> ${newDataSrcset}`);
             el.setAttribute('data-srcset', newDataSrcset);
+            modified = true;
+        }
+        if (newDataSrc && normalize(el.getAttribute('data-src')) !== normalize(newDataSrc)) {
+            console.log(`[FixImgSource] Fixing ${el.tagName} data-src: ${el.getAttribute('data-src')} -> ${newDataSrc}`);
+            el.setAttribute('data-src', newDataSrc);
             modified = true;
         }
 
@@ -135,6 +156,7 @@ function fixSingleElement(el) {
             'data-original-src',
             'data-original-srcset',
             'data-srcset',
+            'data-src',
             'srcset'
         ];
 
