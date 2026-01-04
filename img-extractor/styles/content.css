@@ -293,3 +293,72 @@
 .img-copy-btn.copied {
     background: #10b981;
 }
+
+/* Folder Path & Indicator Styles */
+.img-ui-folder-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 8px 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#img-ui-folder-path {
+    font-size: 11px;
+    color: #38bdf8;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: monospace;
+}
+
+.indicator-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: #64748b;
+    /* Fallback */
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+    display: inline-block;
+}
+
+.indicator-dot.exists {
+    background-color: #ef4444 !important;
+    /* Red */
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
+}
+
+.indicator-dot.new {
+    background-color: #10b981 !important;
+    /* Green */
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6) !important;
+}
+
+.img-ui-copy-btn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.img-ui-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #38bdf8;
+}
+
+.img-ui-copy-btn.copied {
+    color: #10b981;
+}

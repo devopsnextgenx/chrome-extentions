@@ -1,6 +1,8 @@
 (function () {
   let hoverElement = null;
   let selectedElement = null;
+  let currentFolderPath = '';
+  let currentFolderExists = false;
   let isSelecting = false;
   let uiContainer = null;
   let progressContainer = null;
@@ -20,7 +22,12 @@
     } else if (request.action === 'start-download') {
       initiateDownload(request.options);
     } else if (request.action === 'getStatus') {
-      if (sendResponse) sendResponse({ isSelecting, hasSelection: !!selectedElement });
+      if (sendResponse) sendResponse({
+        isSelecting,
+        hasSelection: !!selectedElement,
+        folderName: currentFolderPath,
+        exists: currentFolderExists
+      });
     } else if (request.action === 'update-progress') {
       updateProgress(request);
     } else if (request.action === 'waiting-to-resume') {
@@ -36,6 +43,13 @@
     uiContainer.innerHTML = `
             <div class="img-ui-header"><span>🖼️</span> Img Extractor</div>
             <div class="img-ui-status" id="img-ui-status">Hover and click an element</div>
+            <div id="img-ui-folder-container" class="img-ui-folder-container" style="display: none;">
+                <span id="img-ui-indicator" class="indicator-dot"></span>
+                <code id="img-ui-folder-path"></code>
+                <button id="img-ui-copy-path" class="img-ui-copy-btn" title="Copy Folder Name">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+            </div>
             <div class="img-ui-controls">
                 <button class="img-ui-btn img-ui-btn-secondary" id="img-ui-cancel">Cancel</button>
                 <button class="img-ui-btn img-ui-btn-primary" id="img-ui-download" disabled>Download</button>
@@ -43,6 +57,16 @@
         `;
 
     document.body.appendChild(uiContainer);
+
+    uiContainer.querySelector('#img-ui-copy-path').addEventListener('click', () => {
+      if (currentFolderPath) {
+        navigator.clipboard.writeText(currentFolderPath).then(() => {
+          const btn = uiContainer.querySelector('#img-ui-copy-path');
+          btn.classList.add('copied');
+          setTimeout(() => btn.classList.remove('copied'), 2000);
+        });
+      }
+    });
 
     uiContainer.querySelector('#img-ui-cancel').addEventListener('click', () => {
       isSelecting = false;
@@ -119,20 +143,83 @@
     const imageUrls = Array.from(images).map(img => img.src || img.dataset.src).filter(src => src && src.startsWith('http'));
 
     if (imageUrls.length > 0) {
-      updateUIStatus(`${imageUrls.length} images found. Click Download.`, true);
-      // Notify popup if it's open
-      chrome.runtime.sendMessage({
-        action: 'element-selected',
-        hasImages: true,
-        count: imageUrls.length
+      chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
+        const options = {
+          defaultLocation: data.defaultLocation || 'actresses',
+          actressName: data.actressName || ''
+        };
+        const firstUrl = imageUrls[0];
+        // Replicate basic logic for preview
+        const folderPath = generatePreviewPath(firstUrl, window.location.href, options);
+        const folderName = folderPath.split('/').pop() || folderPath;
+        currentFolderPath = folderName; // Now storing only the last segment as requested
+
+        // Check existence via background
+        chrome.runtime.sendMessage({ action: 'check-folder-exists', path: folderPath }, (response) => {
+          const exists = !!(response && response.exists);
+          currentFolderExists = exists;
+
+          const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
+          const folderPathElem = uiContainer.querySelector('#img-ui-folder-path');
+          const indicator = uiContainer.querySelector('#img-ui-indicator');
+
+          if (folderContainer && folderPathElem) {
+            folderPathElem.textContent = folderName;
+            folderContainer.style.display = 'flex';
+            if (indicator) {
+              indicator.className = 'indicator-dot ' + (exists ? 'exists' : 'new');
+            }
+          }
+
+          updateUIStatus(`${imageUrls.length} images found. Click Download.`, true);
+          // Notify popup if it's open
+          chrome.runtime.sendMessage({
+            action: 'element-selected',
+            hasImages: true,
+            count: imageUrls.length,
+            folderName: folderName,
+            exists: exists
+          });
+        });
       });
     } else {
+      currentFolderPath = '';
+      currentFolderExists = false;
+      const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
+      if (folderContainer) folderContainer.style.display = 'none';
       updateUIStatus('No images found in selected element.', false);
       chrome.runtime.sendMessage({
         action: 'element-selected',
         hasImages: false,
         count: 0
       });
+    }
+  }
+
+  function generatePreviewPath(imgUrl, tabUrl, options) {
+    try {
+      const imgParsed = new URL(imgUrl);
+      const segments = imgParsed.pathname.split('/').filter(s => s);
+      let dynamicFolder = 'images';
+
+      if (imgParsed.hostname.includes('ragalahari.com')) {
+        if (segments.length >= 2) dynamicFolder = segments[segments.length - 2];
+      } else if (imgParsed.hostname.includes('idlebrain.com')) {
+        const imagesIndex = segments.indexOf('images');
+        if (imagesIndex > 0) dynamicFolder = segments[imagesIndex - 1];
+        else if (segments.length >= 2) dynamicFolder = segments[segments.length - 2];
+      } else {
+        if (segments.length >= 2) dynamicFolder = segments[segments.length - 2];
+      }
+
+      let fullPath = [];
+      if (options.defaultLocation) fullPath.push(options.defaultLocation.replace(/^\/+|\/+$/g, ''));
+      if (options.actressName) fullPath.push(options.actressName.replace(/^\/+|\/+$/g, ''));
+      fullPath.push(dynamicFolder.replace(/^\/+|\/+$/g, ''));
+
+      return fullPath.join('/');
+    } catch (e) {
+      return 'images';
     }
   }
 
@@ -144,6 +231,11 @@
     if (selectedElement) {
       selectedElement.classList.remove('img-extractor-selected');
       selectedElement = null;
+    }
+    currentFolderPath = '';
+    if (uiContainer) {
+      const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
+      if (folderContainer) folderContainer.style.display = 'none';
     }
     updateUIStatus("Hover and click an element", false);
   }

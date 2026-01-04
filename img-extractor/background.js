@@ -21,8 +21,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             manualResumes.delete(message.batchId);
             console.log(`Manual resume for batch: ${message.batchId}`);
         }
+    } else if (message.action === 'check-folder-exists') {
+        checkFolderExists(message.path).then(exists => {
+            sendResponse({ exists });
+        });
+        return true; // Keep channel open for async response
     }
 });
+
+async function checkFolderExists(folderPath) {
+    if (!folderPath) return false;
+    // Normalize path for searching - chrome.downloads stores with backslashes on Windows, forward on Linux
+    // But searching for just the folder path as a substring is safest
+    return new Promise((resolve) => {
+        chrome.downloads.search({ query: [folderPath] }, (items) => {
+            if (chrome.runtime.lastError || !items) {
+                resolve(false);
+                return;
+            }
+            // Check if any item's filename contains the folderPath
+            const exists = items.some(item => {
+                const normalizedFilename = item.filename.replace(/\\/g, '/');
+                return normalizedFilename.includes(folderPath);
+            });
+            resolve(exists);
+        });
+    });
+}
 
 async function startDownloading(urls, options, tabUrl, tabId, batchId) {
     const total = urls.length;
@@ -74,6 +99,10 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
                 // console.warn(`Initial download failed for ${finalUrl}, trying fallback if applicable.`, err);
                 if (finalUrl.includes('imgcdn')) {
                     const fallbackUrl = finalUrl.replace('imgcdn', 'img');
+                    console.log(`Retrying with fallback URL: ${fallbackUrl}`);
+                    await downloadFile(fallbackUrl, finalPath);
+                } else if (finalUrl.includes('media')) {
+                    const fallbackUrl = finalUrl.replace('media', 'img');
                     console.log(`Retrying with fallback URL: ${fallbackUrl}`);
                     await downloadFile(fallbackUrl, finalPath);
                 } else {
@@ -225,10 +254,10 @@ function resolveFullSizeUrl(url) {
             // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
             origin = parsedUrl.origin.replace('media1', 'img');
         }
-        if (parsedUrl.origin.includes('media')) {
-            // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
-            origin = parsedUrl.origin.replace('media', 'img');
-        }
+        // if (parsedUrl.origin.includes('media')) {
+        //     // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
+        //     origin = parsedUrl.origin.replace('media', 'img');
+        // }
     }
     if (parsedUrl.origin.includes('idlebrain')) {
         path = path.replace('thumb-', 'newpg-');

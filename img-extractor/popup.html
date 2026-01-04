@@ -27,6 +27,20 @@
       <input type="text" id="actressName" placeholder="Enter actress name">
     </div>
 
+    <div id="folderPathContainer" class="folder-path-container" style="display: none;">
+      <label>Destination Folder</label>
+      <div class="folder-path-wrapper">
+        <span id="folderIndicator" class="indicator-dot"></span>
+        <code id="folderPathDisplay"></code>
+        <button id="copyFolderBtn" class="copy-btn" title="Copy Folder Name">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <div class="button-group">
       <button id="selectElementBtn" class="btn secondary">Select Element</button>
       <button id="downloadBtn" class="btn primary" disabled>Download</button>

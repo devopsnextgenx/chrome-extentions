@@ -4,8 +4,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const selectElementBtn = document.getElementById('selectElementBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const statusMsg = document.getElementById('status');
+    const folderPathContainer = document.getElementById('folderPathContainer');
+    const folderPathDisplay = document.getElementById('folderPathDisplay');
+    const folderIndicator = document.getElementById('folderIndicator');
+    const copyFolderBtn = document.getElementById('copyFolderBtn');
 
     let isSelecting = false;
+    let currentFolderPath = '';
 
     // Load persisted settings
     const data = await chrome.storage.local.get(['defaultLocation', 'actressName']);
@@ -22,6 +27,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (response.hasSelection) {
                     downloadBtn.disabled = false;
                     statusMsg.textContent = "Element selected! Click Download.";
+
+                    if (response.folderName) {
+                        currentFolderPath = response.folderName;
+                        folderPathDisplay.textContent = response.folderName;
+                        folderPathContainer.style.display = 'block';
+                        if (folderIndicator) {
+                            folderIndicator.className = 'indicator-dot ' + (response.exists ? 'exists' : 'new');
+                        }
+                    }
                 }
                 updateUI();
             }
@@ -67,6 +81,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         statusMsg.textContent = 'Initiating download...';
     });
 
+    // Copy folder name button handler
+    copyFolderBtn.addEventListener('click', () => {
+        if (currentFolderPath) {
+            navigator.clipboard.writeText(currentFolderPath).then(() => {
+                copyFolderBtn.classList.add('copied');
+                setTimeout(() => copyFolderBtn.classList.remove('copied'), 2000);
+            });
+        }
+    });
+
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message) => {
         if (message.action === 'element-selected') {
@@ -74,6 +98,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusMsg.textContent = message.hasImages
                 ? `${message.count} images found.`
                 : 'No images found in selected element.';
+
+            if (message.hasImages && message.folderName) {
+                currentFolderPath = message.folderName;
+                folderPathDisplay.textContent = message.folderName;
+                folderPathContainer.style.display = 'block';
+                if (folderIndicator) {
+                    folderIndicator.className = 'indicator-dot ' + (message.exists ? 'exists' : 'new');
+                }
+            } else {
+                currentFolderPath = '';
+                folderPathContainer.style.display = 'none';
+            }
         } else if (message.action === 'selectionCanceled') {
             isSelecting = false;
             updateUI();
@@ -90,6 +126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             selectElementBtn.classList.remove('active');
             statusMsg.textContent = "Click Select Element to begin.";
             downloadBtn.disabled = true;
+            folderPathContainer.style.display = 'none';
+            currentFolderPath = '';
         }
     }
 });
