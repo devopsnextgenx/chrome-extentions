@@ -151,7 +151,7 @@
         const firstUrl = imageUrls[0];
         // Replicate basic logic for preview
         const folderPath = generatePreviewPath(firstUrl, window.location.href, options);
-        const folderName = folderPath.split('/').pop() || folderPath;
+        const folderName = (folderPath.split('/').pop() || folderPath).trim();
         currentFolderPath = folderName; // Now storing only the last segment as requested
 
         // Check existence via background
@@ -213,9 +213,9 @@
       }
 
       let fullPath = [];
-      if (options.defaultLocation) fullPath.push(options.defaultLocation.replace(/^\/+|\/+$/g, ''));
-      if (options.actressName) fullPath.push(options.actressName.replace(/^\/+|\/+$/g, ''));
-      fullPath.push(dynamicFolder.replace(/^\/+|\/+$/g, ''));
+      if (options.defaultLocation) fullPath.push(options.defaultLocation.trim().replace(/^\/+|\/+$/g, ''));
+      if (options.actressName) fullPath.push(options.actressName.trim().replace(/^\/+|\/+$/g, ''));
+      fullPath.push(dynamicFolder.trim().replace(/^\/+|\/+$/g, ''));
 
       return fullPath.join('/');
     } catch (e) {

@@ -31,18 +31,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function checkFolderExists(folderPath) {
     if (!folderPath) return false;
-    // Normalize path for searching - chrome.downloads stores with backslashes on Windows, forward on Linux
-    // But searching for just the folder path as a substring is safest
+
+    // Split and trim segments for robust matching
+    const segments = folderPath.split('/').map(s => s.trim()).filter(s => s);
+    if (segments.length === 0) return false;
+
+    const lastSegment = segments[segments.length - 1];
+    const normalizedQueryPath = segments.join('/').toLowerCase();
+
     return new Promise((resolve) => {
-        chrome.downloads.search({ query: [folderPath] }, (items) => {
+        // Search for the last segment (safest for cross-platform substrings in chrome.downloads)
+        chrome.downloads.search({ query: [lastSegment] }, (items) => {
             if (chrome.runtime.lastError || !items) {
                 resolve(false);
                 return;
             }
-            // Check if any item's filename contains the folderPath
+            // Verify items against the full path (case-insensitive)
             const exists = items.some(item => {
-                const normalizedFilename = item.filename.replace(/\\/g, '/');
-                return normalizedFilename.includes(folderPath);
+                const normalizedFilename = item.filename.replace(/\\/g, '/').toLowerCase();
+                return normalizedFilename.includes(normalizedQueryPath);
             });
             resolve(exists);
         });
@@ -106,8 +113,14 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
                     console.log(`Retrying with fallback URL: ${fallbackUrl}`);
                     await downloadFile(fallbackUrl, finalPath);
                 } else {
-                    console.error(`Download failed for ${finalUrl}`, err);
-                    throw err; // Re-throw if no fallback
+                    if (finalUrl.includes('ragalahari') && finalUrl.includes('img')) {
+                        const fallbackUrl = finalUrl.replace('img', 'starzone');
+                        console.log(`Retrying with fallback URL: ${fallbackUrl}`);
+                        await downloadFile(fallbackUrl, finalPath);
+                    } else {
+                        console.error(`Download failed for ${finalUrl}`, err);
+                        throw err; // Re-throw if no fallback
+                    }
                 }
             }
 
@@ -254,17 +267,23 @@ function resolveFullSizeUrl(url) {
             // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
             origin = parsedUrl.origin.replace('media1', 'img');
         }
-        // if (parsedUrl.origin.includes('media')) {
-        //     // https://media1.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81t.jpg -> https://img.ragalahari.com/june2009/starzone/vimalaraman8/vimalaraman81.jpg
-        //     origin = parsedUrl.origin.replace('media', 'img');
-        // }
+        if (parsedUrl.origin.includes('timg')) {
+            // https://timg.ragalahari.com/april2015/starzone/charmi-mastitickets/charmi-mastitickets13t.jpg -> https://img.ragalahari.com/april2015/starzone/charmi-mastitickets/charmi-mastitickets13t.jpg
+            origin = parsedUrl.origin.replace('timg', 'img');
+        }
+        if (parsedUrl.origin.includes('www1')) {
+            // https://www1.ragalahari.com/april2015/starzone/charmi-mastitickets/charmi-mastitickets13t.jpg -> https://img.ragalahari.com/april2015/starzone/charmi-mastitickets/charmi-mastitickets13t.jpg
+            origin = parsedUrl.origin.replace('www1', 'starzone');
+        }
     }
     if (parsedUrl.origin.includes('idlebrain')) {
         path = path.replace('thumb-', 'newpg-');
     }
+    if (parsedUrl.origin.includes('teluguone.com')) {
+        path = path.replace('_small', '');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
-
     return origin + path + parsedUrl.search;
 }
 
@@ -299,12 +318,12 @@ function generateFolderPath(imgUrl, tabUrl, options) {
 
     let fullPath = [];
     if (options.defaultLocation) {
-        fullPath.push(options.defaultLocation.replace(/^\/+|\/+$/g, ''));
+        fullPath.push(options.defaultLocation.trim().replace(/^\/+|\/+$/g, ''));
     }
     if (options.actressName) {
-        fullPath.push(options.actressName.replace(/^\/+|\/+$/g, ''));
+        fullPath.push(options.actressName.trim().replace(/^\/+|\/+$/g, ''));
     }
-    fullPath.push(dynamicFolder.replace(/^\/+|\/+$/g, ''));
+    fullPath.push(dynamicFolder.trim().replace(/^\/+|\/+$/g, ''));
 
     return fullPath.join('/');
 }

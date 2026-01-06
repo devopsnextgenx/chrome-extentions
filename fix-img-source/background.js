@@ -12,7 +12,9 @@ chrome.runtime.onInstalled.addListener(() => {
                 { search: 'szcdn2.ragalahari.com', replace: 'starzone.ragalahari.com' },
                 { search: 'imgcdn.ragalahari.com', replace: 'img.ragalahari.com' },
                 { search: 'media1.ragalahari.com', replace: 'img.ragalahari.com' },
+                { search: 'timg.ragalahari.com', replace: 'img.ragalahari.com' },
                 { search: 'www.ragalahari.com', replace: 'starzone.ragalahari.com' },
+                { search: 'www1.ragalahari.com', replace: 'starzone.ragalahari.com' },
                 { search: 'starzone.ragalahari.com/june2009/starzone/', replace: 'img.ragalahari.com/june2009/starzone/' }
             ]
         },
