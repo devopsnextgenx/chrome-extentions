@@ -2,6 +2,7 @@
   let hoverElement = null;
   let selectedElement = null;
   let currentFolderPath = '';
+  let currentFullFolderPath = '';
   let currentFolderExists = false;
   let isSelecting = false;
   let uiContainer = null;
@@ -26,6 +27,7 @@
         isSelecting,
         hasSelection: !!selectedElement,
         folderName: currentFolderPath,
+        fullFolderPath: currentFullFolderPath,
         exists: currentFolderExists
       });
     } else if (request.action === 'update-progress') {
@@ -65,6 +67,12 @@
           btn.classList.add('copied');
           setTimeout(() => btn.classList.remove('copied'), 2000);
         });
+      }
+    });
+
+    uiContainer.querySelector('#img-ui-indicator').addEventListener('click', () => {
+      if (currentFolderExists && currentFullFolderPath) {
+        chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
       }
     });
 
@@ -158,6 +166,7 @@
         chrome.runtime.sendMessage({ action: 'check-folder-exists', path: folderPath }, (response) => {
           const exists = !!(response && response.exists);
           currentFolderExists = exists;
+          currentFullFolderPath = folderPath;
 
           const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
           const folderPathElem = uiContainer.querySelector('#img-ui-folder-path');
@@ -168,6 +177,7 @@
             folderContainer.style.display = 'flex';
             if (indicator) {
               indicator.className = 'indicator-dot ' + (exists ? 'exists' : 'new');
+              indicator.title = exists ? 'Click to open folder' : 'Folder does not exist';
             }
           }
 
@@ -178,12 +188,14 @@
             hasImages: true,
             count: imageUrls.length,
             folderName: folderName,
+            fullFolderPath: folderPath,
             exists: exists
           });
         });
       });
     } else {
       currentFolderPath = '';
+      currentFullFolderPath = '';
       currentFolderExists = false;
       const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
       if (folderContainer) folderContainer.style.display = 'none';
@@ -233,6 +245,8 @@
       selectedElement = null;
     }
     currentFolderPath = '';
+    currentFullFolderPath = '';
+    currentFolderExists = false;
     if (uiContainer) {
       const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
       if (folderContainer) folderContainer.style.display = 'none';

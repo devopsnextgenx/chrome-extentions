@@ -26,8 +26,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ exists });
         });
         return true; // Keep channel open for async response
+    } else if (message.action === 'open-folder') {
+        openFolder(message.path);
+        return false;
     }
 });
+
+async function openFolder(folderPath) {
+    if (!folderPath) return;
+
+    const segments = folderPath.split('/').map(s => s.trim()).filter(s => s);
+    if (segments.length === 0) return;
+
+    const lastSegment = segments[segments.length - 1];
+    const normalizedQueryPath = segments.join('/').toLowerCase();
+
+    chrome.downloads.search({ query: [lastSegment] }, (items) => {
+        if (chrome.runtime.lastError || !items || items.length === 0) return;
+
+        // Find the most recent item that matches the full path
+        const matchingItem = items
+            .sort((a, b) => new Date(b.startTime) - new Date(a.startTime))
+            .find(item => {
+                const normalizedFilename = item.filename.replace(/\\/g, '/').toLowerCase();
+                return normalizedFilename.includes(normalizedQueryPath);
+            });
+
+        if (matchingItem) {
+            chrome.downloads.show(matchingItem.id);
+        }
+    });
+}
 
 async function checkFolderExists(folderPath) {
     if (!folderPath) return false;
@@ -220,6 +249,7 @@ function resolveFullSizeUrl(url) {
     // Example: th_sada90.jpg -> sada90.jpg
     const segments = path.split('/');
     let fileName = segments[segments.length - 1];
+    fileName = fileName.replace(/^th_(?:%20|\s*)/i, '')
     fileName = fileName.replace(/^th_/i, '');
     segments[segments.length - 1] = fileName;
     path = segments.join('/');

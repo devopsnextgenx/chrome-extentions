@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let isSelecting = false;
     let currentFolderPath = '';
+    let currentFullFolderPath = '';
+    let currentFolderExists = false;
 
     // Load persisted settings
     const data = await chrome.storage.local.get(['defaultLocation', 'actressName']);
@@ -34,7 +36,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         folderPathContainer.style.display = 'block';
                         if (folderIndicator) {
                             folderIndicator.className = 'indicator-dot ' + (response.exists ? 'exists' : 'new');
+                            folderIndicator.title = response.exists ? 'Click to open folder' : 'Folder does not exist';
                         }
+                        currentFullFolderPath = response.fullFolderPath || '';
+                        currentFolderExists = !!response.exists;
                     }
                 }
                 updateUI();
@@ -91,6 +96,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // Indicator dot click handler
+    folderIndicator.addEventListener('click', () => {
+        if (currentFolderExists && currentFullFolderPath) {
+            chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
+        }
+    });
+
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message) => {
         if (message.action === 'element-selected') {
@@ -102,12 +114,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (message.hasImages && message.folderName) {
                 currentFolderPath = message.folderName;
                 folderPathDisplay.textContent = message.folderName;
+                currentFullFolderPath = message.fullFolderPath;
+                currentFolderExists = !!message.exists;
+
                 folderPathContainer.style.display = 'block';
                 if (folderIndicator) {
                     folderIndicator.className = 'indicator-dot ' + (message.exists ? 'exists' : 'new');
+                    folderIndicator.title = message.exists ? 'Click to open folder' : 'Folder does not exist';
                 }
             } else {
                 currentFolderPath = '';
+                currentFullFolderPath = '';
+                currentFolderExists = false;
                 folderPathContainer.style.display = 'none';
             }
         } else if (message.action === 'selectionCanceled') {
@@ -128,6 +146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             downloadBtn.disabled = true;
             folderPathContainer.style.display = 'none';
             currentFolderPath = '';
+            currentFullFolderPath = '';
+            currentFolderExists = false;
         }
     }
 });
