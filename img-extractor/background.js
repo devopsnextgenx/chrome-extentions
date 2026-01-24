@@ -29,6 +29,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.action === 'open-folder') {
         openFolder(message.path);
         return false;
+    } else if (message.action === 'open-web-folder') {
+        chrome.tabs.create({ url: `http://localhost:3001/?tab=indexing&album=true&path=${encodeURIComponent(message.path)}` });
+        return false;
     }
 });
 
@@ -78,6 +81,7 @@ async function checkFolderExists(folderPath) {
 
             return {
                 exists: true,
+                path: findData.path,
                 existingImages: Array.isArray(imagesData) ? imagesData : []
             };
         }

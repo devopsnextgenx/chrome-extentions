@@ -4,6 +4,7 @@
   let currentFolderPath = '';
   let currentFullFolderPath = '';
   let currentFolderExists = false;
+  let currentApiPath = '';
   let isSelecting = false;
   let uiContainer = null;
   let progressContainer = null;
@@ -71,7 +72,9 @@
     });
 
     uiContainer.querySelector('#img-ui-indicator').addEventListener('click', () => {
-      if (currentFolderExists && currentFullFolderPath) {
+      if (currentFolderExists && currentApiPath) {
+        chrome.runtime.sendMessage({ action: 'open-web-folder', path: currentApiPath });
+      } else if (currentFolderExists && currentFullFolderPath) {
         chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
       }
     });
@@ -167,6 +170,7 @@
           const exists = !!(response && response.exists);
           const existingImages = response && response.existingImages ? response.existingImages : [];
           currentFolderExists = exists;
+          currentApiPath = response && response.path ? response.path : '';
           currentFullFolderPath = folderPath;
 
           // Filter imageUrls to find new ones
@@ -203,6 +207,7 @@
             newCount: newImages.length,
             folderName: folderName,
             fullFolderPath: folderPath,
+            apiPath: currentApiPath,
             exists: exists
           });
         });

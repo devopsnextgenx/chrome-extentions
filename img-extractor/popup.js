@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentFolderPath = '';
     let currentFullFolderPath = '';
     let currentFolderExists = false;
+    let currentApiPath = '';
 
     // Load persisted settings
     const data = await chrome.storage.local.get(['defaultLocation', 'actressName']);
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             folderIndicator.title = response.exists ? 'Click to open folder' : 'Folder does not exist';
                         }
                         currentFullFolderPath = response.fullFolderPath || '';
+                        currentApiPath = response.apiPath || '';
                         currentFolderExists = !!response.exists;
                     }
                 }
@@ -98,7 +100,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Indicator dot click handler
     folderIndicator.addEventListener('click', () => {
-        if (currentFolderExists && currentFullFolderPath) {
+        if (currentFolderExists && currentApiPath) {
+            chrome.runtime.sendMessage({ action: 'open-web-folder', path: currentApiPath });
+        } else if (currentFolderExists && currentFullFolderPath) {
             chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
         }
     });
@@ -125,6 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 currentFolderPath = message.folderName;
                 folderPathDisplay.textContent = message.folderName;
                 currentFullFolderPath = message.fullFolderPath;
+                currentApiPath = message.apiPath;
                 currentFolderExists = !!message.exists;
 
                 folderPathContainer.style.display = 'block';
