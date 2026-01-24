@@ -106,10 +106,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message) => {
         if (message.action === 'element-selected') {
-            downloadBtn.disabled = !message.hasImages;
-            statusMsg.textContent = message.hasImages
-                ? `${message.count} images found.`
-                : 'No images found in selected element.';
+            const hasNew = message.hasImages && (message.newCount === undefined || message.newCount > 0);
+            downloadBtn.disabled = !hasNew;
+
+            if (message.hasImages) {
+                if (message.newCount === 0) {
+                    statusMsg.textContent = `All ${message.count} images already exist.`;
+                } else if (message.newCount !== undefined) {
+                    statusMsg.textContent = `${message.newCount} new images found (of ${message.count}).`;
+                } else {
+                    statusMsg.textContent = `${message.count} images found.`;
+                }
+            } else {
+                statusMsg.textContent = 'No images found in selected element.';
+            }
 
             if (message.hasImages && message.folderName) {
                 currentFolderPath = message.folderName;

@@ -22,8 +22,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.log(`Manual resume for batch: ${message.batchId}`);
         }
     } else if (message.action === 'check-folder-exists') {
-        checkFolderExists(message.path).then(exists => {
-            sendResponse({ exists });
+        checkFolderExists(message.path).then(result => {
+            sendResponse(result);
         });
         return true; // Keep channel open for async response
     } else if (message.action === 'open-folder') {
@@ -59,28 +59,45 @@ async function openFolder(folderPath) {
 }
 
 async function checkFolderExists(folderPath) {
-    if (!folderPath) return false;
+    if (!folderPath) return { exists: false, existingImages: [] };
 
-    // Split and trim segments for robust matching
     const segments = folderPath.split('/').map(s => s.trim()).filter(s => s);
-    if (segments.length === 0) return false;
+    if (segments.length === 0) return { exists: false, existingImages: [] };
 
     const lastSegment = segments[segments.length - 1];
-    const normalizedQueryPath = segments.join('/').toLowerCase();
 
+    try {
+        const findUrl = `http://localhost:3000/api/folders/find?name=${encodeURIComponent(lastSegment)}`;
+        const findResponse = await fetch(findUrl);
+        const findData = await findResponse.json();
+
+        if (findData.status === 'success' && findData.path) {
+            const imagesUrl = `http://localhost:3000/api/browse/images?path=${encodeURIComponent(findData.path)}&recursive=false`;
+            const imagesResponse = await fetch(imagesUrl);
+            const imagesData = await imagesResponse.json(); // returns array of strings
+
+            return {
+                exists: true,
+                existingImages: Array.isArray(imagesData) ? imagesData : []
+            };
+        }
+    } catch (error) {
+        console.error('Error checking folder existence via API:', error);
+    }
+
+    // Fallback to chrome.downloads.search if API fails or folder not found in API
+    const normalizedQueryPath = segments.join('/').toLowerCase();
     return new Promise((resolve) => {
-        // Search for the last segment (safest for cross-platform substrings in chrome.downloads)
         chrome.downloads.search({ query: [lastSegment] }, (items) => {
             if (chrome.runtime.lastError || !items) {
-                resolve(false);
+                resolve({ exists: false, existingImages: [] });
                 return;
             }
-            // Verify items against the full path (case-insensitive)
             const exists = items.some(item => {
                 const normalizedFilename = item.filename.replace(/\\/g, '/').toLowerCase();
                 return normalizedFilename.includes(normalizedQueryPath);
             });
-            resolve(exists);
+            resolve({ exists, existingImages: [] });
         });
     });
 }
@@ -105,6 +122,16 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
 
     updateUI();
 
+    let existingImages = [];
+    if (urls.length > 0) {
+        const firstUrl = resolveFullSizeUrl(urls[0]);
+        const folderPath = generateFolderPath(firstUrl, tabUrl, options);
+        const checkResult = await checkFolderExists(folderPath);
+        if (checkResult.exists) {
+            existingImages = checkResult.existingImages.map(img => img.split('/').pop().toLowerCase());
+        }
+    }
+
     for (const url of urls) {
         try {
             if (!activeBatches.has(batchId)) {
@@ -114,6 +141,14 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
             const finalUrl = resolveFullSizeUrl(url);
             const folderPath = generateFolderPath(finalUrl, tabUrl, options);
             const fileName = getFileName(finalUrl);
+
+            // Skip if already exists
+            if (existingImages.includes(fileName.toLowerCase())) {
+                console.log(`Skipping ${fileName} as it already exists in folder.`);
+                downloadedCount++;
+                updateUI();
+                continue;
+            }
 
             // Aggressively sanitize folder path and filename
             const sanitize = (s) => s.replace(/[<>:"|?*]/g, '_').trim();
@@ -312,9 +347,14 @@ function resolveFullSizeUrl(url) {
     if (parsedUrl.origin.includes('teluguone.com')) {
         path = path.replace('_small', '');
     }
+    if (parsedUrl.origin.includes('indiglamour.com')) {
+        // https://i.indiglamour.com/photogallery/tamil/actress/2016/Mar16/Shravya/normal/Shravya_10186thmb.jpg
+        // https://i.indiglamour.com/photogallery/tamil/actress/2016/Mar16/Shravya/normal/Shravya_10186.jpg
+        path = path.replace('thmb', '');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
-    return origin + path + parsedUrl.search;
+    return origin + path.replaceAll('//', '/') + parsedUrl.search;
 }
 
 function generateFolderPath(imgUrl, tabUrl, options) {

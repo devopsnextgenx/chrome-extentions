@@ -165,8 +165,16 @@
         // Check existence via background
         chrome.runtime.sendMessage({ action: 'check-folder-exists', path: folderPath }, (response) => {
           const exists = !!(response && response.exists);
+          const existingImages = response && response.existingImages ? response.existingImages : [];
           currentFolderExists = exists;
           currentFullFolderPath = folderPath;
+
+          // Filter imageUrls to find new ones
+          const existingFilenames = new Set(existingImages.map(img => img.split('/').pop().toLowerCase()));
+          const newImages = imageUrls.filter(url => {
+            const fileName = url.split('/').pop().split('?')[0].toLowerCase();
+            return !existingFilenames.has(fileName);
+          });
 
           const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
           const folderPathElem = uiContainer.querySelector('#img-ui-folder-path');
@@ -181,12 +189,18 @@
             }
           }
 
-          updateUIStatus(`${imageUrls.length} images found. Click Download.`, true);
+          const statusMsg = newImages.length === 0
+            ? `All ${imageUrls.length} images already exist.`
+            : `${newImages.length} new images found (of ${imageUrls.length}). Click Download.`;
+
+          updateUIStatus(statusMsg, newImages.length > 0);
+
           // Notify popup if it's open
           chrome.runtime.sendMessage({
             action: 'element-selected',
-            hasImages: true,
+            hasImages: imageUrls.length > 0,
             count: imageUrls.length,
+            newCount: newImages.length,
             folderName: folderName,
             fullFolderPath: folderPath,
             exists: exists
