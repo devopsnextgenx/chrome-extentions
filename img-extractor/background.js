@@ -356,6 +356,11 @@ function resolveFullSizeUrl(url) {
         // https://i.indiglamour.com/photogallery/tamil/actress/2016/Mar16/Shravya/normal/Shravya_10186.jpg
         path = path.replace('thmb', '');
     }
+    if (parsedUrl.origin.includes('tamilnow.com')) {
+        // https://www.tamilnow.com/movies/actresses/neha-hing/new-galleries-cinema-actress-neha-hing-9608.jpeg
+        // https://www.tamilnow.com/movies/actresses/neha-hing/new-galleries-cinema-actress-neha-hing-9608.jpg
+        path = path.replace('jpeg', 'jpg');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
     return origin + path.replaceAll('//', '/') + parsedUrl.search;
