@@ -142,6 +142,7 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
                 console.log(`Batch ${batchId} was cancelled.`);
                 break;
             }
+            // https://hotnessrater.com/infinite-scroll/478/gemma-atkinson
             if (url.includes('hotnessrater')) {
                 itr++;
                 url = url.replace('.jpg', `_${itr}.jpg`);
