@@ -135,12 +135,16 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
             existingImages = checkResult.existingImages.map(img => img.split('/').pop().toLowerCase());
         }
     }
-
+    let itr = 0;
     for (const url of urls) {
         try {
             if (!activeBatches.has(batchId)) {
                 console.log(`Batch ${batchId} was cancelled.`);
                 break;
+            }
+            if (url.includes('hotnessrater')) {
+                itr++;
+                url = url.replace('.jpg', `_${itr}.jpg`);
             }
             const finalUrl = resolveFullSizeUrl(url);
             const folderPath = generateFolderPath(finalUrl, tabUrl, options);
