@@ -78,11 +78,23 @@ async function checkFolderExists(folderPath) {
             const imagesUrl = `http://localhost:3000/api/browse/images?path=${encodeURIComponent(findData.path)}&recursive=false`;
             const imagesResponse = await fetch(imagesUrl);
             const imagesData = await imagesResponse.json(); // returns array of strings
-
+            // imagesData =[{
+            //     "path": "/media/storage/actresses/SurabhiPrabhu/indian-ad-model-surabhi-prabhu/indian-ad-model-surabhi-prabhu8.jpg",
+            //     "width": 600,
+            //     "height": 871,
+            //     "timestamp": 1767018587
+            // },
+            // {
+            //     "path": "/media/storage/actresses/SurabhiPrabhu/indian-ad-model-surabhi-prabhu/indian-ad-model-surabhi-prabhu9.jpg",
+            //     "width": 642,
+            //     "height": 854,
+            //     "timestamp": 1767018588
+            // }];
+            const existingImages = imagesData.map(image => image.path);
             return {
                 exists: true,
                 path: findData.path,
-                existingImages: Array.isArray(imagesData) ? imagesData : []
+                existingImages: existingImages
             };
         }
     } catch (error) {
@@ -301,6 +313,12 @@ function resolveFullSizeUrl(url) {
     // for https://telugupeople.com/uploads/SpiceGallery/Thumbnails/201501/vithi%20(19).JPG convert to https://telugupeople.com/uploads/SpiceGallery/201501/vithi%20(19).JPG
     if (parsedUrl.hostname.includes('telugupeople.com') && path.includes('Thumbnails')) {
         path = path.replace('Thumbnails', '');
+    }
+    if (parsedUrl.hostname.includes('behindwoods.com') && path.includes('thumbnails')) {
+        path = path.replace('thumbnails', '');
+    }
+    if (parsedUrl.hostname.includes('santabanta.com') && path.includes('_th')) {
+        path = path.replace('_th', '');
     }
 
     // for https://cinejosh.com/.../thumb/... convert to https://cinejosh.com/.../normal/...
