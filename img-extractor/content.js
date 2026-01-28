@@ -35,6 +35,8 @@
       updateProgress(request);
     } else if (request.action === 'waiting-to-resume') {
       handleWaitingToResume(request);
+    } else if (request.action === 'resumed-download') {
+      handleResumedDownload(request);
     }
   });
 
@@ -448,6 +450,20 @@
       }
       if (countdownText) countdownText.textContent = timeLeft;
     }, 1000);
+  }
+
+  function handleResumedDownload(message) {
+    const { batchId } = message;
+    const card = batchCards.get(batchId);
+    if (!card) return;
+
+    const continueBtn = card.querySelector(`#continue-${batchId}`);
+    const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+    const status = card.querySelector(`#status-${batchId}`);
+
+    if (continueBtn) continueBtn.style.display = 'none';
+    if (countdownContainer) countdownContainer.style.display = 'none';
+    if (status) status.textContent = 'Downloading...';
   }
 
   function onKeyDown(e) {

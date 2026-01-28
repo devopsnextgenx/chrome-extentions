@@ -234,6 +234,12 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
 
                 // Re-check cancellation after pause
                 if (!activeBatches.has(batchId)) break;
+
+                console.log(`Batch ${batchId}: Resuming downloads...`);
+                chrome.tabs.sendMessage(tabId, {
+                    action: 'resumed-download',
+                    batchId: batchId
+                });
             } else {
                 // Regular delay between other images
                 await new Promise(resolve => setTimeout(resolve, 500));
