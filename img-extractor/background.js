@@ -148,7 +148,7 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
         }
     }
     let itr = 0;
-    for (const url of urls) {
+    for (let url of urls) {
         try {
             if (!activeBatches.has(batchId)) {
                 console.log(`Batch ${batchId} was cancelled.`);
@@ -320,15 +320,15 @@ function resolveFullSizeUrl(url) {
     if (parsedUrl.hostname.includes('telugupeople.com') && path.includes('Thumbnails')) {
         path = path.replace('Thumbnails', '');
     }
-    if (parsedUrl.hostname.includes('behindwoods.com') && path.includes('thumbnails')) {
+    if (parsedUrl.hostname.includes('behindwoods') && path.includes('thumbnails')) {
         path = path.replace('thumbnails', '');
     }
-    if (parsedUrl.hostname.includes('santabanta.com') && path.includes('_th')) {
+    if (parsedUrl.hostname.includes('santabanta') && path.includes('_th')) {
         path = path.replace('_th', '');
     }
 
     // for https://cinejosh.com/.../thumb/... convert to https://cinejosh.com/.../normal/...
-    if (parsedUrl.hostname.includes('cinejosh.com') && path.includes('thumb')) {
+    if (parsedUrl.hostname.includes('cinejosh') && path.includes('thumb')) {
         path = path.replace('thumb', 'normal');
     }
 
