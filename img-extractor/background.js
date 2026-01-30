@@ -1,6 +1,24 @@
 // pendingDownloads map and onDeterminingFilename listener removed to avoid conflicts with other extensions.
 // Filenames are now passed directly to chrome.downloads.download().
 
+// Enable extension icon on Instagram pages
+chrome.runtime.onInstalled.addListener(() => {
+    // Set up rules to always show the extension icon on Instagram
+    chrome.declarativeContent.onPageChanged.removeRules(undefined, () => {
+        chrome.declarativeContent.onPageChanged.addRules([
+            {
+                conditions: [
+                    new chrome.declarativeContent.PageStateMatcher({
+                        pageUrl: { hostContains: 'instagram.com' }
+                    })
+                ],
+                actions: [new chrome.declarativeContent.ShowAction()]
+            }
+        ]);
+    });
+});
+
+
 const activeBatches = new Set();
 const manualResumes = new Map();
 

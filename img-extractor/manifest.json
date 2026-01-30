@@ -7,7 +7,8 @@
         "activeTab",
         "storage",
         "downloads",
-        "scripting"
+        "scripting",
+        "declarativeContent"
     ],
     "host_permissions": [
         "http://localhost/*",
@@ -35,6 +36,18 @@
             "css": [
                 "styles/content.css"
             ]
+        },
+        {
+            "matches": [
+                "*://*.instagram.com/*"
+            ],
+            "js": [
+                "instagram-panel.js"
+            ],
+            "css": [
+                "styles/instagram-panel.css"
+            ],
+            "run_at": "document_end"
         }
     ],
     "icons": {

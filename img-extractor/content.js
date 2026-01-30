@@ -53,6 +53,20 @@
     }
   });
 
+  // Listen for messages from Instagram panel (window messages)
+  window.addEventListener('message', (event) => {
+    // Only accept messages from the same window
+    if (event.source !== window) return;
+    
+    if (event.data.type === 'IMG_EXTRACTOR_START_MONITORING') {
+      startInstagramMonitoring(event.data.options);
+    } else if (event.data.type === 'IMG_EXTRACTOR_STOP_MONITORING') {
+      stopInstagramMonitoring();
+    } else if (event.data.type === 'IMG_EXTRACTOR_DOWNLOAD') {
+      extractInstagramImages(event.data.options, event.data.mediaType);
+    }
+  });
+
   function createUI() {
     if (uiContainer) return;
 
@@ -267,6 +281,13 @@
     } catch (e) {
       return 'images';
     }
+  }
+
+  function generateFolderPathFromOptions(options) {
+    let fullPath = [];
+    if (options.defaultLocation) fullPath.push(options.defaultLocation.trim().replace(/^\/+|\/+$/g, ''));
+    if (options.actressName) fullPath.push(options.actressName.trim().replace(/^\/+|\/+$/g, ''));
+    return fullPath.length > 0 ? fullPath.join('/') : 'actresses';
   }
 
   function clearHighlighter() {
@@ -587,6 +608,7 @@
       // Extract videos - capture blob data immediately before URLs are revoked
       const allVideos = Array.from(targetArticle.querySelectorAll('video'));
       const videoDataPromises = [];
+      const uniqueVideoUrls = new Set();
 
       allVideos.forEach(video => {
         const videoUrl = getVideoUrl(video);
@@ -662,6 +684,13 @@
     if (urlsToDownload.length > 0) {
       console.log(`Found ${urlsToDownload.length} ${mediaTypeLabel}.`);
 
+      // Send message to Instagram panel
+      window.postMessage({
+        type: 'IMG_EXTRACTOR_EXTRACTION_STARTED',
+        count: urlsToDownload.length,
+        mediaType: mediaTypeLabel
+      }, '*');
+
       chrome.runtime.sendMessage({
         action: 'instagram-extraction-started',
         count: urlsToDownload.length,
@@ -678,14 +707,34 @@
           options: options,
           tabUrl: window.location.href
         });
+        
+        // Send completion message to Instagram panel
+        window.postMessage({
+          type: 'IMG_EXTRACTOR_EXTRACTION_COMPLETE',
+          count: convertedUrls.length,
+          mediaType: mediaTypeLabel
+        }, '*');
       }).catch(error => {
         console.error('Error converting blob URLs:', error);
+        
+        // Send error message to Instagram panel
+        window.postMessage({
+          type: 'IMG_EXTRACTOR_EXTRACTION_FAILED',
+          reason: `Failed to process ${mediaTypeLabel}: ${error.message}`
+        }, '*');
+        
         chrome.runtime.sendMessage({
           action: 'instagram-extraction-failed',
           reason: `Failed to process ${mediaTypeLabel}: ${error.message}`
         });
       });
     } else {
+      // Send error message to Instagram panel
+      window.postMessage({
+        type: 'IMG_EXTRACTOR_EXTRACTION_FAILED',
+        reason: `No ${mediaTypeLabel} found.`
+      }, '*');
+      
       chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: `No ${mediaTypeLabel} found.` });
     }
   }
@@ -835,13 +884,16 @@
   // --- Instagram Monitoring Functions ---
 
   function startInstagramMonitoring(options) {
-    console.log("Starting Instagram monitoring...");
+    console.log("Starting Instagram monitoring...", options);
 
     // Reset cache and state
     instagramImageCache.clear();
     instagramVideoCache.clear();
     instagramMaxArea = 0;
     instagramMonitoring = true;
+
+    // Generate folder path
+    const folderPath = generateFolderPathFromOptions(options);
 
     // Initial scan of existing media
     scanForInstagramMedia();
@@ -893,6 +945,15 @@
       attributeFilter: ['src', 'srcset']
     });
 
+    // Send message to Instagram panel
+    window.postMessage({
+      type: 'IMG_EXTRACTOR_MONITORING_STARTED',
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size,
+      folderPath: folderPath
+    }, '*');
+
+    // Also send to popup/background
     chrome.runtime.sendMessage({
       action: 'instagram-monitoring-started',
       imageCount: instagramImageCache.size,
@@ -912,6 +973,14 @@
 
     instagramMonitoring = false;
 
+    // Send message to Instagram panel
+    window.postMessage({
+      type: 'IMG_EXTRACTOR_MONITORING_STOPPED',
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size
+    }, '*');
+
+    // Also send to popup/background
     chrome.runtime.sendMessage({
       action: 'instagram-monitoring-stopped',
       imageCount: instagramImageCache.size,
@@ -1119,6 +1188,14 @@
   }
 
   function notifyPopupOfDiscovery() {
+    // Send message to Instagram panel
+    window.postMessage({
+      type: 'IMG_EXTRACTOR_MEDIA_DISCOVERED',
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size
+    }, '*');
+
+    // Also send to popup/background
     chrome.runtime.sendMessage({
       action: 'instagram-media-discovered',
       imageCount: instagramImageCache.size,

@@ -1,0 +1,317 @@
+/* Instagram Injected Panel Styles */
+
+.img-extractor-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 320px;
+    background: rgba(255, 255, 255, 0.98);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(10px);
+    z-index: 999999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: all 0.3s ease;
+}
+
+.img-extractor-panel.minimized {
+    height: 48px;
+    overflow: hidden;
+}
+
+.img-extractor-panel.dragging {
+    cursor: grabbing;
+    opacity: 0.9;
+}
+
+/* Panel Header */
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px 12px 0 0;
+    cursor: grab;
+    user-select: none;
+}
+
+.panel-header:active {
+    cursor: grabbing;
+}
+
+.panel-title {
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.panel-title::before {
+    content: '📸';
+    font-size: 16px;
+}
+
+.panel-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.panel-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    font-size: 14px;
+    padding: 0;
+}
+
+.panel-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Panel Content */
+.panel-content {
+    padding: 16px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.panel-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Form Groups */
+.panel-form-group {
+    margin-bottom: 12px;
+}
+
+.panel-form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #262626;
+    margin-bottom: 6px;
+}
+
+.panel-form-group input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #dbdbdb;
+    border-radius: 6px;
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+
+.panel-form-group input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Buttons */
+.panel-button-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.panel-button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.panel-button.primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.panel-button.primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.panel-button.secondary {
+    background: #f0f0f0;
+    color: #262626;
+}
+
+.panel-button.secondary:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+
+.panel-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Monitoring Status */
+.panel-monitoring-status {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.panel-monitoring-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #262626;
+}
+
+.panel-pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #4caf50;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+.panel-media-counters {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.panel-counter-item {
+    text-align: center;
+}
+
+.panel-counter-item strong {
+    display: block;
+    font-size: 20px;
+    color: #667eea;
+}
+
+.panel-counter-item span {
+    font-size: 11px;
+    color: #8e8e8e;
+}
+
+.panel-counter-divider {
+    color: #dbdbdb;
+}
+
+/* Folder Path Display */
+.panel-folder-path {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.panel-folder-path label {
+    display: block;
+    font-size: 11px;
+    color: #8e8e8e;
+    margin-bottom: 4px;
+}
+
+.panel-folder-path code {
+    color: #667eea;
+    font-family: 'Courier New', monospace;
+}
+
+/* Status Messages */
+.panel-status {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.panel-status.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.panel-status.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.panel-status.info {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .img-extractor-panel {
+        background: rgba(38, 38, 38, 0.98);
+    }
+    
+    .panel-form-group label {
+        color: #f5f5f5;
+    }
+    
+    .panel-form-group input {
+        background: #262626;
+        border-color: #3a3a3a;
+        color: #f5f5f5;
+    }
+    
+    .panel-button.secondary {
+        background: #3a3a3a;
+        color: #f5f5f5;
+    }
+    
+    .panel-button.secondary:hover:not(:disabled) {
+        background: #4a4a4a;
+    }
+    
+    .panel-monitoring-status,
+    .panel-folder-path {
+        background: #1a1a1a;
+    }
+    
+    .panel-monitoring-indicator {
+        color: #f5f5f5;
+    }
+}
