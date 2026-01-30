@@ -613,6 +613,16 @@
       mediaTypeLabel = 'items';
     }
 
+    // Final deduplication to prevent duplicates from dynamic detection
+    const uniqueUrlsToDownload = [...new Set(urlsToDownload)];
+    const duplicatesRemoved = urlsToDownload.length - uniqueUrlsToDownload.length;
+
+    if (duplicatesRemoved > 0) {
+      console.log(`Removed ${duplicatesRemoved} duplicate(s) before download.`);
+    }
+
+    urlsToDownload = uniqueUrlsToDownload;
+
     // Determine Preview Path for UI
     const dummyUrl = urlsToDownload.length > 0 ? urlsToDownload[0] : 'https://instagram.com/unknown.jpg';
     const folderPath = generatePreviewPath(dummyUrl, window.location.href, options);
@@ -641,30 +651,44 @@
   }
 
   function getVideoUrl(videoElement) {
-    // Try direct src first
-    if (videoElement.src && videoElement.src.startsWith('http')) {
+    // Try currentSrc first (what's actually playing)
+    if (videoElement.currentSrc && videoElement.currentSrc !== '') {
+      console.log('Video currentSrc:', videoElement.currentSrc);
+      return videoElement.currentSrc;
+    }
+
+    // Try direct src
+    if (videoElement.src && videoElement.src !== '') {
+      console.log('Video src:', videoElement.src);
       return videoElement.src;
     }
 
     // Try source elements
     const sources = videoElement.querySelectorAll('source');
     for (const source of sources) {
-      if (source.src && source.src.startsWith('http')) {
+      if (source.src && source.src !== '') {
+        console.log('Video source src:', source.src);
         return source.src;
       }
     }
 
+    console.log('No video URL found for video element:', videoElement);
     return null;
   }
 
   function isValidVideoUrl(url) {
-    if (!url) return false;
+    if (!url) {
+      console.log('Video URL is null or empty');
+      return false;
+    }
 
-    // Check for common video extensions or blob URLs
-    return url.includes('.mp4') ||
-      url.includes('.webm') ||
-      url.includes('video') ||
-      url.includes('blob:');
+    // Accept any http/https URL or blob URL
+    const isValid = url.startsWith('http://') ||
+      url.startsWith('https://') ||
+      url.startsWith('blob:');
+
+    console.log(`Video URL validation: ${url.substring(0, 80)}... -> ${isValid}`);
+    return isValid;
   }
 
   // --- Instagram Monitoring Functions ---
@@ -775,6 +799,8 @@
     const allVideos = Array.from(targetArticle.querySelectorAll('video'));
     let newMediaFound = false;
 
+    console.log(`Scanning: ${allImages.length} images, ${allVideos.length} videos`);
+
     // Calculate max area across all images
     allImages.forEach(img => {
       const width = img.naturalWidth || img.width;
@@ -794,6 +820,7 @@
 
     // Process each video
     allVideos.forEach(video => {
+      console.log('Processing video element:', video);
       const discovered = processDiscoveredVideo(video);
       if (discovered) newMediaFound = true;
     });
@@ -802,6 +829,8 @@
     if (newMediaFound) {
       notifyPopupOfDiscovery();
     }
+
+    console.log(`Cache status - Images: ${instagramImageCache.size}, Videos: ${instagramVideoCache.size}`);
   }
 
   function processDiscoveredImage(img) {
@@ -839,9 +868,23 @@
   }
 
   function processDiscoveredVideo(video) {
-    const videoUrl = getVideoUrl(video);
+    let videoUrl = getVideoUrl(video);
 
-    if (!videoUrl || !isValidVideoUrl(videoUrl)) {
+    // If no URL found, wait a bit and try again (videos might load async)
+    if (!videoUrl) {
+      console.log('Video URL not immediately available, will retry...');
+      setTimeout(() => {
+        videoUrl = getVideoUrl(video);
+        if (videoUrl && isValidVideoUrl(videoUrl) && !instagramVideoCache.has(videoUrl)) {
+          instagramVideoCache.add(videoUrl);
+          console.log(`Discovered new video (delayed): ${videoUrl.substring(0, 80)}...`);
+          notifyPopupOfDiscovery();
+        }
+      }, 500);
+      return false;
+    }
+
+    if (!isValidVideoUrl(videoUrl)) {
       return false;
     }
 
