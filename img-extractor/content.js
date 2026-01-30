@@ -507,7 +507,7 @@
     return sources.length > 0 ? sources[0].url : null;
   }
 
-  function extractInstagramImages(options, mediaType = 'all') {
+  async function extractInstagramImages(options, mediaType = 'all') {
     console.log(`Starting Instagram extraction for: ${mediaType}...`);
 
     let imageUrls = [];
@@ -584,16 +584,47 @@
 
       imageUrls = Array.from(uniqueImageUrls);
 
-      // Extract videos
+      // Extract videos - capture blob data immediately before URLs are revoked
       const allVideos = Array.from(targetArticle.querySelectorAll('video'));
-      const uniqueVideoUrls = new Set();
+      const videoDataPromises = [];
 
       allVideos.forEach(video => {
         const videoUrl = getVideoUrl(video);
         if (videoUrl && isValidVideoUrl(videoUrl)) {
-          uniqueVideoUrls.add(videoUrl);
+          if (videoUrl.startsWith('blob:')) {
+            // For blob URLs, fetch immediately before they're revoked
+            videoDataPromises.push(
+              fetch(videoUrl)
+                .then(response => response.blob())
+                .then(blob => {
+                  return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                  });
+                })
+                .catch(error => {
+                  console.error('Failed to capture blob video:', videoUrl, error);
+                  return null;
+                })
+            );
+          } else {
+            // Regular URLs can be added directly
+            uniqueVideoUrls.add(videoUrl);
+          }
         }
       });
+
+      // Wait for all blob conversions to complete
+      if (videoDataPromises.length > 0) {
+        const convertedVideos = await Promise.all(videoDataPromises);
+        convertedVideos.forEach(dataUrl => {
+          if (dataUrl) {
+            uniqueVideoUrls.add(dataUrl);
+          }
+        });
+      }
 
       videoUrls = Array.from(uniqueVideoUrls);
     }
@@ -639,15 +670,125 @@
         mediaType: mediaType
       });
 
-      chrome.runtime.sendMessage({
-        action: 'process-downloads',
-        urls: urlsToDownload,
-        options: options,
-        tabUrl: window.location.href
+      // Convert blob URLs to data URLs before sending to background
+      convertBlobUrlsToDataUrls(urlsToDownload).then(convertedUrls => {
+        chrome.runtime.sendMessage({
+          action: 'process-downloads',
+          urls: convertedUrls,
+          options: options,
+          tabUrl: window.location.href
+        });
+      }).catch(error => {
+        console.error('Error converting blob URLs:', error);
+        chrome.runtime.sendMessage({
+          action: 'instagram-extraction-failed',
+          reason: `Failed to process ${mediaTypeLabel}: ${error.message}`
+        });
       });
     } else {
       chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: `No ${mediaTypeLabel} found.` });
     }
+  }
+
+  /**
+   * Convert blob URLs to data URLs so they can be accessed from background script
+   * For videos, we need to track the video element to access the blob properly
+   */
+  async function convertBlobUrlsToDataUrls(urls) {
+    const convertedUrls = [];
+
+    for (const url of urls) {
+      if (url.startsWith('blob:')) {
+        try {
+          console.log('Converting blob URL to data URL:', url.substring(0, 80) + '...');
+
+          // Try to find the video element with this blob URL
+          const videoElement = document.querySelector(`video[src="${url}"], video[currentSrc="${url}"]`);
+
+          if (videoElement) {
+            // If we have the video element, try to get blob from it
+            try {
+              const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'include',
+                mode: 'cors'
+              });
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+
+              const blob = await response.blob();
+
+              // Convert blob to data URL
+              const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+
+              console.log('Successfully converted blob to data URL via fetch');
+              convertedUrls.push(dataUrl);
+              continue;
+            } catch (fetchError) {
+              console.warn('Fetch failed, trying XMLHttpRequest:', fetchError);
+
+              // Fallback to XMLHttpRequest
+              try {
+                const blob = await new Promise((resolve, reject) => {
+                  const xhr = new XMLHttpRequest();
+                  xhr.open('GET', url, true);
+                  xhr.responseType = 'blob';
+                  xhr.withCredentials = true;
+
+                  xhr.onload = function () {
+                    if (this.status === 200) {
+                      resolve(this.response);
+                    } else {
+                      reject(new Error(`XHR failed with status ${this.status}`));
+                    }
+                  };
+
+                  xhr.onerror = function () {
+                    reject(new Error('XHR network error'));
+                  };
+
+                  xhr.send();
+                });
+
+                const dataUrl = await new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+
+                console.log('Successfully converted blob to data URL via XHR');
+                convertedUrls.push(dataUrl);
+                continue;
+              } catch (xhrError) {
+                console.error('XHR also failed:', xhrError);
+              }
+            }
+          }
+
+          // If all else fails, skip this video
+          console.error('Could not convert blob URL, skipping:', url);
+          chrome.runtime.sendMessage({
+            action: 'instagram-extraction-failed',
+            reason: 'Failed to access video data. The video may be protected or already closed.'
+          });
+        } catch (error) {
+          console.error('Failed to convert blob URL:', url, error);
+        }
+      } else {
+        // Not a blob URL, keep as-is
+        convertedUrls.push(url);
+      }
+    }
+
+    return convertedUrls;
   }
 
   function getVideoUrl(videoElement) {
@@ -875,10 +1016,8 @@
       console.log('Video URL not immediately available, will retry...');
       setTimeout(() => {
         videoUrl = getVideoUrl(video);
-        if (videoUrl && isValidVideoUrl(videoUrl) && !instagramVideoCache.has(videoUrl)) {
-          instagramVideoCache.add(videoUrl);
-          console.log(`Discovered new video (delayed): ${videoUrl.substring(0, 80)}...`);
-          notifyPopupOfDiscovery();
+        if (videoUrl && isValidVideoUrl(videoUrl)) {
+          handleVideoUrl(videoUrl);
         }
       }, 500);
       return false;
@@ -888,10 +1027,92 @@
       return false;
     }
 
-    if (!instagramVideoCache.has(videoUrl)) {
-      instagramVideoCache.add(videoUrl);
-      console.log(`Discovered new video: ${videoUrl.substring(0, 80)}...`);
-      return true;
+    return handleVideoUrl(videoUrl);
+  }
+
+  function handleVideoUrl(videoUrl) {
+    if (videoUrl.startsWith('blob:')) {
+      // Find the video element to capture its stream
+      const videoElement = document.querySelector(`video[src="${videoUrl}"], video[currentSrc="${videoUrl}"]`);
+
+      if (!videoElement) {
+        console.error('Could not find video element for blob URL');
+        return false;
+      }
+
+      // Try to capture the video using MediaRecorder
+      try {
+        // Check if video is playing or can be played
+        if (videoElement.paused) {
+          videoElement.play().catch(e => console.warn('Could not play video:', e));
+        }
+
+        // Wait a bit for video to start playing
+        setTimeout(() => {
+          try {
+            // Capture the stream from the video element
+            const stream = videoElement.captureStream ? videoElement.captureStream() : videoElement.mozCaptureStream();
+
+            if (!stream) {
+              console.error('captureStream not supported or failed');
+              return;
+            }
+
+            const chunks = [];
+            const mediaRecorder = new MediaRecorder(stream, {
+              mimeType: 'video/webm;codecs=vp8'
+            });
+
+            mediaRecorder.ondataavailable = (event) => {
+              if (event.data && event.data.size > 0) {
+                chunks.push(event.data);
+              }
+            };
+
+            mediaRecorder.onstop = () => {
+              const blob = new Blob(chunks, { type: 'video/webm' });
+              const reader = new FileReader();
+
+              reader.onloadend = () => {
+                const dataUrl = reader.result;
+                if (!instagramVideoCache.has(dataUrl)) {
+                  instagramVideoCache.add(dataUrl);
+                  console.log(`Discovered new video (captured via MediaRecorder): ${dataUrl.substring(0, 80)}...`);
+                  notifyPopupOfDiscovery();
+                }
+              };
+
+              reader.readAsDataURL(blob);
+            };
+
+            // Record for the duration of the video (or max 30 seconds)
+            mediaRecorder.start();
+
+            const duration = Math.min(videoElement.duration || 30, 30) * 1000;
+            setTimeout(() => {
+              if (mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+              }
+            }, duration);
+
+          } catch (error) {
+            console.error('Failed to capture video stream:', error);
+          }
+        }, 500);
+
+      } catch (error) {
+        console.error('Failed to setup video capture:', error);
+      }
+
+      return true; // Indicate we're processing it
+    } else {
+      // Regular URL
+      if (!instagramVideoCache.has(videoUrl)) {
+        instagramVideoCache.add(videoUrl);
+        console.log(`Discovered new video: ${videoUrl.substring(0, 80)}...`);
+        notifyPopupOfDiscovery();
+        return true;
+      }
     }
 
     return false;

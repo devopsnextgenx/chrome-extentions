@@ -141,6 +141,7 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
     let existingImages = [];
     if (urls.length > 0) {
         const firstUrl = resolveFullSizeUrl(urls[0]);
+        console.log('Processing URL for folder path:', firstUrl.substring(0, 100) + (firstUrl.length > 100 ? '...' : ''));
         const folderPath = generateFolderPath(firstUrl, tabUrl, options);
         const checkResult = await checkFolderExists(folderPath);
         if (checkResult.exists) {
@@ -159,9 +160,23 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
                 itr++;
                 url = url.replace('.jpg', `_${itr}.jpg`);
             }
-            const finalUrl = resolveFullSizeUrl(url);
+            // Check if this is a video URL
+            const isVideo = isVideoUrl(url);
+
+            // For videos, use original URL (especially for blob URLs)
+            // For images, resolve to full size
+            const finalUrl = isVideo ? url : resolveFullSizeUrl(url);
             const folderPath = generateFolderPath(finalUrl, tabUrl, options);
-            const fileName = getFileName(finalUrl);
+            let fileName = getFileName(finalUrl);
+
+            // For videos, ensure proper extension
+            if (isVideo) {
+                const hasExtension = fileName.toLowerCase().match(/\.(mp4|webm|mov|avi|mkv|m4v)$/);
+                if (!hasExtension) {
+                    const ext = getVideoExtension(finalUrl);
+                    fileName = fileName.split('.')[0] + ext;
+                }
+            }
 
             // Skip if already exists
             if (existingImages.includes(fileName.toLowerCase())) {
@@ -183,29 +198,40 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
             pathSegments.push(sanitizedFileName);
             const finalPath = pathSegments.join('/');
 
-            console.log('Downloading to path:', finalPath);
+            console.log(`Downloading ${isVideo ? 'video' : 'image'} to path:`, finalPath);
 
             try {
-                await downloadFile(finalUrl, finalPath);
-            } catch (err) {
-                // console.warn(`Initial download failed for ${finalUrl}, trying fallback if applicable.`, err);
-                if (finalUrl.includes('imgcdn')) {
-                    const fallbackUrl = finalUrl.replace('imgcdn', 'img');
-                    console.log(`Retrying with fallback URL: ${fallbackUrl}`);
-                    await downloadFile(fallbackUrl, finalPath);
-                } else if (finalUrl.includes('media')) {
-                    const fallbackUrl = finalUrl.replace('media', 'img');
-                    console.log(`Retrying with fallback URL: ${fallbackUrl}`);
-                    await downloadFile(fallbackUrl, finalPath);
+                // Use video download for videos, regular download for images
+                if (isVideo) {
+                    await downloadVideo(finalUrl, finalPath);
                 } else {
-                    if (finalUrl.includes('ragalahari') && finalUrl.includes('img')) {
-                        const fallbackUrl = finalUrl.replace('img', 'starzone');
+                    await downloadFile(finalUrl, finalPath);
+                }
+            } catch (err) {
+                // Only try fallbacks for images, not videos
+                if (!isVideo) {
+                    // console.warn(`Initial download failed for ${finalUrl}, trying fallback if applicable.`, err);
+                    if (finalUrl.includes('imgcdn')) {
+                        const fallbackUrl = finalUrl.replace('imgcdn', 'img');
+                        console.log(`Retrying with fallback URL: ${fallbackUrl}`);
+                        await downloadFile(fallbackUrl, finalPath);
+                    } else if (finalUrl.includes('media')) {
+                        const fallbackUrl = finalUrl.replace('media', 'img');
                         console.log(`Retrying with fallback URL: ${fallbackUrl}`);
                         await downloadFile(fallbackUrl, finalPath);
                     } else {
-                        console.error(`Download failed for ${finalUrl}`, err);
-                        throw err; // Re-throw if no fallback
+                        if (finalUrl.includes('ragalahari') && finalUrl.includes('img')) {
+                            const fallbackUrl = finalUrl.replace('img', 'starzone');
+                            console.log(`Retrying with fallback URL: ${fallbackUrl}`);
+                            await downloadFile(fallbackUrl, finalPath);
+                        } else {
+                            console.error(`Download failed for ${finalUrl}`, err);
+                            throw err; // Re-throw if no fallback
+                        }
                     }
+                } else {
+                    console.error(`Video download failed for ${finalUrl}`, err);
+                    throw err;
                 }
             }
 
@@ -253,6 +279,111 @@ async function startDownloading(urls, options, tabUrl, tabId, batchId) {
         }
     }
     activeBatches.delete(batchId);
+}
+
+/**
+ * Check if URL is a video file based on extension or blob URL from video element
+ */
+function isVideoUrl(url) {
+    if (!url) return false;
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+    const lowerUrl = url.toLowerCase();
+
+    // Check for blob URLs (Instagram videos)
+    if (lowerUrl.startsWith('blob:')) return true;
+
+    // Check for data URLs with video mime types
+    if (lowerUrl.startsWith('data:video/')) return true;
+
+    // Check for video file extensions
+    return videoExtensions.some(ext => lowerUrl.includes(ext));
+}
+
+/**
+ * Get appropriate file extension for video
+ */
+function getVideoExtension(url, defaultExt = '.mp4') {
+    if (!url) return defaultExt;
+
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+    const lowerUrl = url.toLowerCase();
+
+    for (const ext of videoExtensions) {
+        if (lowerUrl.includes(ext)) {
+            return ext;
+        }
+    }
+
+    return defaultExt;
+}
+
+/**
+ * Download video file (handles regular URLs and data URLs)
+ */
+async function downloadVideo(url, filename) {
+    // If it's a data URL (converted from blob in content script), download directly
+    if (url.startsWith('data:')) {
+        try {
+            const sizeKB = Math.round(url.length / 1024);
+            console.log('Downloading video from data URL, size:', sizeKB, 'KB');
+
+            // Ensure filename has video extension
+            if (!filename.toLowerCase().match(/\.(mp4|webm|mov|avi|mkv|m4v)$/)) {
+                // For data URLs from MediaRecorder, use .webm
+                if (url.startsWith('data:video/webm')) {
+                    filename = filename + '.webm';
+                } else {
+                    filename = filename + '.mp4';
+                }
+            }
+
+            console.log('Starting download with filename:', filename);
+
+            return new Promise((resolve, reject) => {
+                chrome.downloads.download({
+                    url: url,
+                    filename: filename,
+                    conflictAction: 'uniquify',
+                    saveAs: false
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Download failed to start:', chrome.runtime.lastError.message);
+                        return reject(new Error(chrome.runtime.lastError.message));
+                    }
+
+                    console.log('Download initiated with ID:', downloadId);
+
+                    const checkStatus = (delta) => {
+                        if (delta.id !== downloadId) return;
+
+                        if (delta.state) {
+                            if (delta.state.current === 'complete') {
+                                chrome.downloads.onChanged.removeListener(checkStatus);
+                                resolve(downloadId);
+                            } else if (delta.state.current === 'interrupted') {
+                                chrome.downloads.onChanged.removeListener(checkStatus);
+                                chrome.downloads.search({ id: downloadId }, (items) => {
+                                    const error = items && items[0] && items[0].error ? items[0].error : 'Unknown error';
+                                    reject(new Error(`Download interrupted: ${error}`));
+                                });
+                            }
+                        }
+                    };
+
+                    chrome.downloads.onChanged.addListener(checkStatus);
+                });
+            });
+        } catch (error) {
+            console.error('Failed to download video from data URL:', error);
+            throw error;
+        }
+    } else if (url.startsWith('blob:')) {
+        // This shouldn't happen anymore, but handle it gracefully
+        throw new Error('Blob URLs should be converted to data URLs in content script');
+    } else {
+        // Regular URL - use standard download
+        return downloadFile(url, filename);
+    }
 }
 
 /**
@@ -401,7 +532,37 @@ function resolveFullSizeUrl(url) {
 }
 
 function generateFolderPath(imgUrl, tabUrl, options) {
-    const imgParsed = new URL(imgUrl);
+    // Handle data URLs (from MediaRecorder) - use default folder
+    if (imgUrl.startsWith('data:')) {
+        console.log('Generating folder path for data URL video');
+        let fullPath = [];
+        if (options.defaultLocation) {
+            fullPath.push(options.defaultLocation.trim().replace(/^\/+|\/+$/g, ''));
+        }
+        if (options.actressName) {
+            fullPath.push(options.actressName.trim().replace(/^\/+|\/+$/g, ''));
+        }
+        fullPath.push('instagram-videos'); // Default folder for data URL videos
+        return fullPath.join('/');
+    }
+
+    let imgParsed;
+    try {
+        imgParsed = new URL(imgUrl);
+    } catch (error) {
+        console.error('Failed to parse URL:', imgUrl.substring(0, 100), error);
+        // Fallback to default folder
+        let fullPath = [];
+        if (options.defaultLocation) {
+            fullPath.push(options.defaultLocation.trim().replace(/^\/+|\/+$/g, ''));
+        }
+        if (options.actressName) {
+            fullPath.push(options.actressName.trim().replace(/^\/+|\/+$/g, ''));
+        }
+        fullPath.push('downloads');
+        return fullPath.join('/');
+    }
+
     const segments = imgParsed.pathname.split('/').filter(s => s);
 
     let dynamicFolder = 'images';
@@ -442,6 +603,24 @@ function generateFolderPath(imgUrl, tabUrl, options) {
 }
 
 function getFileName(url) {
-    const parsed = new URL(url);
-    return parsed.pathname.split('/').pop();
+    // Handle blob URLs
+    if (url.startsWith('blob:')) {
+        // Generate a timestamp-based filename for blob URLs
+        const timestamp = Date.now();
+        const ext = getVideoExtension(url);
+        return `video_${timestamp}${ext}`;
+    }
+
+    try {
+        const parsed = new URL(url);
+        let filename = parsed.pathname.split('/').pop();
+
+        // Remove query parameters from filename
+        filename = filename.split('?')[0];
+
+        return filename || `download_${Date.now()}`;
+    } catch (error) {
+        console.error('Error parsing URL for filename:', error);
+        return `download_${Date.now()}`;
+    }
 }
