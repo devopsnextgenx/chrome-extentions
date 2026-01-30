@@ -51,17 +51,28 @@
       <div id="monitoringStatus" class="monitoring-status" style="display: none;">
         <div class="monitoring-indicator">
           <span class="pulse-dot"></span>
-          <span>Monitoring for images...</span>
+          <span>Monitoring for media...</span>
         </div>
-        <div class="image-counter">
-          <strong id="imageCount">0</strong> images found
+        <div class="media-counters">
+          <div class="counter-item">
+            <strong id="imageCount">0</strong>
+            <span>images</span>
+          </div>
+          <div class="counter-divider">•</div>
+          <div class="counter-item">
+            <strong id="videoCount">0</strong>
+            <span>videos</span>
+          </div>
         </div>
-        <div class="monitoring-hint">Scroll through the carousel to discover more images</div>
+        <div class="monitoring-hint">Scroll through the carousel to discover more media</div>
       </div>
       <div class="button-group">
         <button id="startMonitoringBtn" class="btn secondary">Start Monitoring</button>
         <button id="stopMonitoringBtn" class="btn secondary" style="display: none;">Stop Monitoring</button>
-        <button id="downloadInstaBtn" class="btn primary" style="display: none;">Download Images</button>
+      </div>
+      <div class="button-group">
+        <button id="downloadImagesBtn" class="btn primary" disabled>Download Images</button>
+        <button id="downloadVideosBtn" class="btn primary" disabled>Download Videos</button>
       </div>
     </div>
 

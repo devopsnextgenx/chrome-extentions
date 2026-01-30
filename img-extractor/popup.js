@@ -16,6 +16,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const stopMonitoringBtn = document.getElementById('stopMonitoringBtn');
     const monitoringStatus = document.getElementById('monitoringStatus');
     const imageCount = document.getElementById('imageCount');
+    const videoCount = document.getElementById('videoCount');
+    const downloadImagesBtn = document.getElementById('downloadImagesBtn');
+    const downloadVideosBtn = document.getElementById('downloadVideosBtn');
 
     let isSelecting = false;
     let currentFolderPath = '';
@@ -121,9 +124,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Download Instagram button handler
-    if (downloadInstaBtn) {
-        downloadInstaBtn.addEventListener('click', async () => {
+    // Download Images button handler
+    if (downloadImagesBtn) {
+        downloadImagesBtn.addEventListener('click', async () => {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
 
@@ -132,9 +135,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 actressName: actressNameInput.value
             };
 
-            statusMsg.textContent = 'Extracting Instagram images...';
+            statusMsg.textContent = 'Downloading Instagram images...';
 
-            chrome.tabs.sendMessage(tab.id, { action: 'extract_instagram_images', options });
+            chrome.tabs.sendMessage(tab.id, { action: 'extract_instagram_images', options, mediaType: 'images' });
+        });
+    }
+
+    // Download Videos button handler
+    if (downloadVideosBtn) {
+        downloadVideosBtn.addEventListener('click', async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+
+            const options = {
+                defaultLocation: defaultLocationInput.value,
+                actressName: actressNameInput.value
+            };
+
+            statusMsg.textContent = 'Downloading Instagram videos...';
+
+            chrome.tabs.sendMessage(tab.id, { action: 'extract_instagram_images', options, mediaType: 'videos' });
         });
     }
 
@@ -219,16 +239,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusMsg.style.color = '#ff6b6b';
         } else if (message.action === 'instagram-monitoring-started') {
             isMonitoring = true;
-            updateInstagramMonitoringUI(message.count);
+            updateInstagramMonitoringUI(message.imageCount || 0, message.videoCount || 0);
             statusMsg.textContent = 'Monitoring started. Scroll through the carousel.';
             statusMsg.style.color = '#4CAF50';
         } else if (message.action === 'instagram-monitoring-stopped') {
             isMonitoring = false;
-            updateInstagramMonitoringUI(message.finalCount || 0);
-            statusMsg.textContent = `Monitoring stopped. ${message.finalCount || 0} images cached.`;
+            updateInstagramMonitoringUI(message.imageCount || 0, message.videoCount || 0);
+            statusMsg.textContent = `Monitoring stopped. ${message.imageCount || 0} images, ${message.videoCount || 0} videos cached.`;
             statusMsg.style.color = '#888';
-        } else if (message.action === 'instagram-images-discovered') {
-            updateInstagramMonitoringUI(message.count);
+        } else if (message.action === 'instagram-media-discovered') {
+            updateInstagramMonitoringUI(message.imageCount || 0, message.videoCount || 0);
         }
     });
 
@@ -249,9 +269,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    function updateInstagramMonitoringUI(count) {
+    function updateInstagramMonitoringUI(imgCount, vidCount) {
         if (imageCount) {
-            imageCount.textContent = count;
+            imageCount.textContent = imgCount;
+        }
+        if (videoCount) {
+            videoCount.textContent = vidCount;
         }
 
         if (isMonitoring) {
@@ -260,21 +283,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (startMonitoringBtn) startMonitoringBtn.style.display = 'none';
             if (stopMonitoringBtn) stopMonitoringBtn.style.display = 'inline-block';
 
-            // Show download button if images found
-            if (downloadInstaBtn) {
-                if (count > 0) {
-                    downloadInstaBtn.style.display = 'inline-block';
-                    downloadInstaBtn.textContent = `Download ${count} Image${count !== 1 ? 's' : ''}`;
-                } else {
-                    downloadInstaBtn.style.display = 'none';
-                }
+            // Enable/disable buttons based on available media
+            if (downloadImagesBtn) {
+                downloadImagesBtn.disabled = imgCount === 0;
+                downloadImagesBtn.textContent = imgCount > 0
+                    ? `Download ${imgCount} Image${imgCount !== 1 ? 's' : ''}`
+                    : 'Download Images';
+            }
+
+            if (downloadVideosBtn) {
+                downloadVideosBtn.disabled = vidCount === 0;
+                downloadVideosBtn.textContent = vidCount > 0
+                    ? `Download ${vidCount} Video${vidCount !== 1 ? 's' : ''}`
+                    : 'Download Videos';
             }
         } else {
             // Hide monitoring status
             if (monitoringStatus) monitoringStatus.style.display = 'none';
             if (startMonitoringBtn) startMonitoringBtn.style.display = 'inline-block';
             if (stopMonitoringBtn) stopMonitoringBtn.style.display = 'none';
-            if (downloadInstaBtn) downloadInstaBtn.style.display = 'none';
+
+            // Disable both buttons when not monitoring
+            if (downloadImagesBtn) {
+                downloadImagesBtn.disabled = true;
+                downloadImagesBtn.textContent = 'Download Images';
+            }
+            if (downloadVideosBtn) {
+                downloadVideosBtn.disabled = true;
+                downloadVideosBtn.textContent = 'Download Videos';
+            }
         }
     }
 });

@@ -14,6 +14,7 @@
   let instagramMonitoring = false;
   let instagramObserver = null;
   let instagramImageCache = new Set();
+  let instagramVideoCache = new Set();
   let instagramMaxArea = 0;
 
   // Listen for messages from popup
@@ -44,7 +45,7 @@
     } else if (request.action === 'resumed-download') {
       handleResumedDownload(request);
     } else if (request.action === 'extract_instagram_images') {
-      extractInstagramImages(request.options);
+      extractInstagramImages(request.options, request.mediaType);
     } else if (request.action === 'start_instagram_monitoring') {
       startInstagramMonitoring(request.options);
     } else if (request.action === 'stop_instagram_monitoring') {
@@ -506,15 +507,17 @@
     return sources.length > 0 ? sources[0].url : null;
   }
 
-  function extractInstagramImages(options) {
-    console.log("Starting Instagram extraction...");
+  function extractInstagramImages(options, mediaType = 'all') {
+    console.log(`Starting Instagram extraction for: ${mediaType}...`);
 
     let imageUrls = [];
+    let videoUrls = [];
 
-    // If monitoring is active, use cached images
-    if (instagramMonitoring && instagramImageCache.size > 0) {
+    // If monitoring is active, use cached media
+    if (instagramMonitoring && (instagramImageCache.size > 0 || instagramVideoCache.size > 0)) {
       imageUrls = Array.from(instagramImageCache);
-      console.log(`Using ${imageUrls.length} cached images from monitoring.`);
+      videoUrls = Array.from(instagramVideoCache);
+      console.log(`Using ${imageUrls.length} cached images and ${videoUrls.length} cached videos from monitoring.`);
 
       // Stop monitoring after extraction
       stopInstagramMonitoring();
@@ -536,6 +539,7 @@
 
       if (!targetArticle) targetArticle = document;
 
+      // Extract images
       const allImages = Array.from(targetArticle.querySelectorAll('img'));
 
       // Calculate max area to identify main content images
@@ -555,13 +559,12 @@
       });
 
       // Filter images that are > 40% of the largest image area
-      // This removes profile pics and icons while keeping portrait/landscape variations of main content
       const validImages = imageCandidates.filter(item => {
-        if (maxArea < 10000) return item.area > 100; // Fallback for very small images
+        if (maxArea < 10000) return item.area > 100;
         return item.area >= (maxArea * 0.4);
       });
 
-      const uniqueUrls = new Set();
+      const uniqueImageUrls = new Set();
 
       validImages.forEach(item => {
         const img = item.img;
@@ -575,37 +578,93 @@
         }
 
         if (bestUrl) {
-          uniqueUrls.add(bestUrl);
+          uniqueImageUrls.add(bestUrl);
         }
       });
 
-      imageUrls = Array.from(uniqueUrls);
+      imageUrls = Array.from(uniqueImageUrls);
+
+      // Extract videos
+      const allVideos = Array.from(targetArticle.querySelectorAll('video'));
+      const uniqueVideoUrls = new Set();
+
+      allVideos.forEach(video => {
+        const videoUrl = getVideoUrl(video);
+        if (videoUrl && isValidVideoUrl(videoUrl)) {
+          uniqueVideoUrls.add(videoUrl);
+        }
+      });
+
+      videoUrls = Array.from(uniqueVideoUrls);
+    }
+
+    // Filter based on mediaType
+    let urlsToDownload = [];
+    let mediaTypeLabel = '';
+
+    if (mediaType === 'images') {
+      urlsToDownload = imageUrls;
+      mediaTypeLabel = 'images';
+    } else if (mediaType === 'videos') {
+      urlsToDownload = videoUrls;
+      mediaTypeLabel = 'videos';
+    } else {
+      urlsToDownload = [...imageUrls, ...videoUrls];
+      mediaTypeLabel = 'items';
     }
 
     // Determine Preview Path for UI
-    const dummyUrl = imageUrls.length > 0 ? imageUrls[0] : 'https://instagram.com/unknown.jpg';
+    const dummyUrl = urlsToDownload.length > 0 ? urlsToDownload[0] : 'https://instagram.com/unknown.jpg';
     const folderPath = generatePreviewPath(dummyUrl, window.location.href, options);
     const folderName = folderPath.split('/').pop();
 
-    if (imageUrls.length > 0) {
-      console.log(`Found ${imageUrls.length} high-quality images.`);
+    if (urlsToDownload.length > 0) {
+      console.log(`Found ${urlsToDownload.length} ${mediaTypeLabel}.`);
 
       chrome.runtime.sendMessage({
         action: 'instagram-extraction-started',
-        count: imageUrls.length,
+        count: urlsToDownload.length,
         folderName: folderName,
-        fullPath: folderPath
+        fullPath: folderPath,
+        mediaType: mediaType
       });
 
       chrome.runtime.sendMessage({
         action: 'process-downloads',
-        urls: imageUrls,
+        urls: urlsToDownload,
         options: options,
         tabUrl: window.location.href
       });
     } else {
-      chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: "No large images found." });
+      chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: `No ${mediaTypeLabel} found.` });
     }
+  }
+
+  function getVideoUrl(videoElement) {
+    // Try direct src first
+    if (videoElement.src && videoElement.src.startsWith('http')) {
+      return videoElement.src;
+    }
+
+    // Try source elements
+    const sources = videoElement.querySelectorAll('source');
+    for (const source of sources) {
+      if (source.src && source.src.startsWith('http')) {
+        return source.src;
+      }
+    }
+
+    return null;
+  }
+
+  function isValidVideoUrl(url) {
+    if (!url) return false;
+
+    // Check for common video extensions or blob URLs
+    return url.includes('.mp4') ||
+      url.includes('.webm') ||
+      url.includes('video') ||
+      url.includes('blob:');
   }
 
   // --- Instagram Monitoring Functions ---
@@ -615,13 +674,14 @@
 
     // Reset cache and state
     instagramImageCache.clear();
+    instagramVideoCache.clear();
     instagramMaxArea = 0;
     instagramMonitoring = true;
 
-    // Initial scan of existing images
-    scanForInstagramImages();
+    // Initial scan of existing media
+    scanForInstagramMedia();
 
-    // Set up MutationObserver to watch for new images
+    // Set up MutationObserver to watch for new images and videos
     instagramObserver = new MutationObserver((mutations) => {
       let shouldScan = false;
 
@@ -630,7 +690,8 @@
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.tagName === 'IMG' || node.querySelector('img')) {
+              if (node.tagName === 'IMG' || node.tagName === 'VIDEO' ||
+                node.querySelector('img') || node.querySelector('video')) {
                 shouldScan = true;
                 break;
               }
@@ -639,7 +700,8 @@
         }
 
         // Check if src/srcset attributes changed
-        if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
+        if (mutation.type === 'attributes' &&
+          (mutation.target.tagName === 'IMG' || mutation.target.tagName === 'VIDEO')) {
           shouldScan = true;
         }
 
@@ -648,7 +710,7 @@
 
       if (shouldScan) {
         // Debounce scanning to avoid excessive processing
-        setTimeout(() => scanForInstagramImages(), 300);
+        setTimeout(() => scanForInstagramMedia(), 300);
       }
     });
 
@@ -668,7 +730,8 @@
 
     chrome.runtime.sendMessage({
       action: 'instagram-monitoring-started',
-      count: instagramImageCache.size
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size
     });
 
     console.log("Instagram monitoring active.");
@@ -686,13 +749,14 @@
 
     chrome.runtime.sendMessage({
       action: 'instagram-monitoring-stopped',
-      finalCount: instagramImageCache.size
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size
     });
 
-    console.log(`Monitoring stopped. Total images cached: ${instagramImageCache.size}`);
+    console.log(`Monitoring stopped. Images: ${instagramImageCache.size}, Videos: ${instagramVideoCache.size}`);
   }
 
-  function scanForInstagramImages() {
+  function scanForInstagramMedia() {
     if (!instagramMonitoring) return;
 
     const articles = Array.from(document.querySelectorAll('article'));
@@ -708,7 +772,8 @@
     if (!targetArticle) targetArticle = document;
 
     const allImages = Array.from(targetArticle.querySelectorAll('img'));
-    let newImagesFound = false;
+    const allVideos = Array.from(targetArticle.querySelectorAll('video'));
+    let newMediaFound = false;
 
     // Calculate max area across all images
     allImages.forEach(img => {
@@ -724,11 +789,17 @@
     // Process each image
     allImages.forEach(img => {
       const discovered = processDiscoveredImage(img);
-      if (discovered) newImagesFound = true;
+      if (discovered) newMediaFound = true;
     });
 
-    // Notify popup if new images were found
-    if (newImagesFound) {
+    // Process each video
+    allVideos.forEach(video => {
+      const discovered = processDiscoveredVideo(video);
+      if (discovered) newMediaFound = true;
+    });
+
+    // Notify popup if new media was found
+    if (newMediaFound) {
       notifyPopupOfDiscovery();
     }
   }
@@ -767,10 +838,27 @@
     return false;
   }
 
+  function processDiscoveredVideo(video) {
+    const videoUrl = getVideoUrl(video);
+
+    if (!videoUrl || !isValidVideoUrl(videoUrl)) {
+      return false;
+    }
+
+    if (!instagramVideoCache.has(videoUrl)) {
+      instagramVideoCache.add(videoUrl);
+      console.log(`Discovered new video: ${videoUrl.substring(0, 80)}...`);
+      return true;
+    }
+
+    return false;
+  }
+
   function notifyPopupOfDiscovery() {
     chrome.runtime.sendMessage({
-      action: 'instagram-images-discovered',
-      count: instagramImageCache.size
+      action: 'instagram-media-discovered',
+      imageCount: instagramImageCache.size,
+      videoCount: instagramVideoCache.size
     });
   }
 
