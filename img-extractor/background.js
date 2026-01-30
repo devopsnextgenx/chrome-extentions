@@ -390,6 +390,11 @@ function resolveFullSizeUrl(url) {
         // https://www.tamilnow.com/movies/actresses/neha-hing/new-galleries-cinema-actress-neha-hing-9608.jpg
         path = path.replace('jpeg', 'jpg');
     }
+    if (parsedUrl.origin.includes('pichunter.com')) {
+        // https://cdn1337.pichunter.com/media/posts/12--5362895/conversions/361680-12fcebedb579f11881d3e0746709118d-post_archive_thumb.jpg
+        // https://cdn1337.pichunter.com/media/posts/12--5362895/conversions/361680-12fcebedb579f11881d3e0746709118d-post_single_big.jpg
+        path = path.replace('post_archive_thumb', 'post_single_big');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
     return origin + path.replaceAll('//', '/') + parsedUrl.search;

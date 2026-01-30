@@ -10,6 +10,12 @@
   let progressContainer = null;
   let batchCards = new Map();
 
+  // Instagram monitoring state
+  let instagramMonitoring = false;
+  let instagramObserver = null;
+  let instagramImageCache = new Set();
+  let instagramMaxArea = 0;
+
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'toggleSelection' || request.action === 'start-selection') {
@@ -37,6 +43,12 @@
       handleWaitingToResume(request);
     } else if (request.action === 'resumed-download') {
       handleResumedDownload(request);
+    } else if (request.action === 'extract_instagram_images') {
+      extractInstagramImages(request.options);
+    } else if (request.action === 'start_instagram_monitoring') {
+      startInstagramMonitoring(request.options);
+    } else if (request.action === 'stop_instagram_monitoring') {
+      stopInstagramMonitoring();
     }
   });
 
@@ -479,4 +491,287 @@
   document.addEventListener('mouseout', handleMouseOut, true);
   document.addEventListener('click', onClick, true);
   document.addEventListener('keydown', onKeyDown, true);
+
+  // --- Instagram Extraction Logic ---
+
+  function getLargestImageFromSrcset(srcset) {
+    if (!srcset) return null;
+    const sources = srcset.split(',').map(s => {
+      const [url, size] = s.trim().split(' ');
+      return { url, width: parseInt(size, 10) };
+    });
+
+    // Sort by width descending
+    sources.sort((a, b) => b.width - a.width);
+    return sources.length > 0 ? sources[0].url : null;
+  }
+
+  function extractInstagramImages(options) {
+    console.log("Starting Instagram extraction...");
+
+    let imageUrls = [];
+
+    // If monitoring is active, use cached images
+    if (instagramMonitoring && instagramImageCache.size > 0) {
+      imageUrls = Array.from(instagramImageCache);
+      console.log(`Using ${imageUrls.length} cached images from monitoring.`);
+
+      // Stop monitoring after extraction
+      stopInstagramMonitoring();
+    } else {
+      // Fallback to immediate extraction
+      const articles = Array.from(document.querySelectorAll('article'));
+      if (articles.length === 0) {
+        chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: "No post found!" });
+        return;
+      }
+
+      let targetArticle = null;
+      const dialog = document.querySelector('div[role="dialog"]');
+      if (dialog) {
+        targetArticle = dialog.querySelector('article') || dialog;
+      } else {
+        targetArticle = articles[0];
+      }
+
+      if (!targetArticle) targetArticle = document;
+
+      const allImages = Array.from(targetArticle.querySelectorAll('img'));
+
+      // Calculate max area to identify main content images
+      let maxArea = 0;
+      const imageCandidates = [];
+
+      allImages.forEach(img => {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        const area = width * height;
+
+        if (area > maxArea) {
+          maxArea = area;
+        }
+
+        imageCandidates.push({ img, area, width, height });
+      });
+
+      // Filter images that are > 40% of the largest image area
+      // This removes profile pics and icons while keeping portrait/landscape variations of main content
+      const validImages = imageCandidates.filter(item => {
+        if (maxArea < 10000) return item.area > 100; // Fallback for very small images
+        return item.area >= (maxArea * 0.4);
+      });
+
+      const uniqueUrls = new Set();
+
+      validImages.forEach(item => {
+        const img = item.img;
+        if (img.alt && img.alt.includes("profile picture")) return;
+
+        let bestUrl = null;
+        if (img.srcset) {
+          bestUrl = getLargestImageFromSrcset(img.srcset);
+        } else {
+          bestUrl = img.src;
+        }
+
+        if (bestUrl) {
+          uniqueUrls.add(bestUrl);
+        }
+      });
+
+      imageUrls = Array.from(uniqueUrls);
+    }
+
+    // Determine Preview Path for UI
+    const dummyUrl = imageUrls.length > 0 ? imageUrls[0] : 'https://instagram.com/unknown.jpg';
+    const folderPath = generatePreviewPath(dummyUrl, window.location.href, options);
+    const folderName = folderPath.split('/').pop();
+
+    if (imageUrls.length > 0) {
+      console.log(`Found ${imageUrls.length} high-quality images.`);
+
+      chrome.runtime.sendMessage({
+        action: 'instagram-extraction-started',
+        count: imageUrls.length,
+        folderName: folderName,
+        fullPath: folderPath
+      });
+
+      chrome.runtime.sendMessage({
+        action: 'process-downloads',
+        urls: imageUrls,
+        options: options,
+        tabUrl: window.location.href
+      });
+    } else {
+      chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: "No large images found." });
+    }
+  }
+
+  // --- Instagram Monitoring Functions ---
+
+  function startInstagramMonitoring(options) {
+    console.log("Starting Instagram monitoring...");
+
+    // Reset cache and state
+    instagramImageCache.clear();
+    instagramMaxArea = 0;
+    instagramMonitoring = true;
+
+    // Initial scan of existing images
+    scanForInstagramImages();
+
+    // Set up MutationObserver to watch for new images
+    instagramObserver = new MutationObserver((mutations) => {
+      let shouldScan = false;
+
+      for (const mutation of mutations) {
+        // Check if new nodes were added
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              if (node.tagName === 'IMG' || node.querySelector('img')) {
+                shouldScan = true;
+                break;
+              }
+            }
+          }
+        }
+
+        // Check if src/srcset attributes changed
+        if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
+          shouldScan = true;
+        }
+
+        if (shouldScan) break;
+      }
+
+      if (shouldScan) {
+        // Debounce scanning to avoid excessive processing
+        setTimeout(() => scanForInstagramImages(), 300);
+      }
+    });
+
+    // Find the target container (dialog or main article)
+    let targetContainer = document.querySelector('div[role="dialog"]');
+    if (!targetContainer) {
+      targetContainer = document.querySelector('article') || document.body;
+    }
+
+    // Start observing
+    instagramObserver.observe(targetContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'srcset']
+    });
+
+    chrome.runtime.sendMessage({
+      action: 'instagram-monitoring-started',
+      count: instagramImageCache.size
+    });
+
+    console.log("Instagram monitoring active.");
+  }
+
+  function stopInstagramMonitoring() {
+    console.log("Stopping Instagram monitoring...");
+
+    if (instagramObserver) {
+      instagramObserver.disconnect();
+      instagramObserver = null;
+    }
+
+    instagramMonitoring = false;
+
+    chrome.runtime.sendMessage({
+      action: 'instagram-monitoring-stopped',
+      finalCount: instagramImageCache.size
+    });
+
+    console.log(`Monitoring stopped. Total images cached: ${instagramImageCache.size}`);
+  }
+
+  function scanForInstagramImages() {
+    if (!instagramMonitoring) return;
+
+    const articles = Array.from(document.querySelectorAll('article'));
+    let targetArticle = null;
+
+    const dialog = document.querySelector('div[role="dialog"]');
+    if (dialog) {
+      targetArticle = dialog.querySelector('article') || dialog;
+    } else if (articles.length > 0) {
+      targetArticle = articles[0];
+    }
+
+    if (!targetArticle) targetArticle = document;
+
+    const allImages = Array.from(targetArticle.querySelectorAll('img'));
+    let newImagesFound = false;
+
+    // Calculate max area across all images
+    allImages.forEach(img => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      const area = width * height;
+
+      if (area > instagramMaxArea) {
+        instagramMaxArea = area;
+      }
+    });
+
+    // Process each image
+    allImages.forEach(img => {
+      const discovered = processDiscoveredImage(img);
+      if (discovered) newImagesFound = true;
+    });
+
+    // Notify popup if new images were found
+    if (newImagesFound) {
+      notifyPopupOfDiscovery();
+    }
+  }
+
+  function processDiscoveredImage(img) {
+    // Skip profile pictures
+    if (img.alt && img.alt.includes("profile picture")) return false;
+
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    const area = width * height;
+
+    // Filter by area (same logic as extraction)
+    if (instagramMaxArea >= 10000 && area < (instagramMaxArea * 0.4)) {
+      return false;
+    }
+
+    if (instagramMaxArea < 10000 && area <= 100) {
+      return false;
+    }
+
+    // Get best quality URL
+    let bestUrl = null;
+    if (img.srcset) {
+      bestUrl = getLargestImageFromSrcset(img.srcset);
+    } else {
+      bestUrl = img.src;
+    }
+
+    if (bestUrl && !instagramImageCache.has(bestUrl)) {
+      instagramImageCache.add(bestUrl);
+      console.log(`Discovered new image: ${bestUrl.substring(0, 80)}...`);
+      return true;
+    }
+
+    return false;
+  }
+
+  function notifyPopupOfDiscovery() {
+    chrome.runtime.sendMessage({
+      action: 'instagram-images-discovered',
+      count: instagramImageCache.size
+    });
+  }
+
 })();

@@ -10,7 +10,8 @@
         "scripting"
     ],
     "host_permissions": [
-        "http://localhost/*"
+        "http://localhost/*",
+        "*://*.instagram.com/*"
     ],
     "action": {
         "default_popup": "popup.html",

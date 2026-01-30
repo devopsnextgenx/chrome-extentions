@@ -46,6 +46,25 @@
       <button id="downloadBtn" class="btn primary" disabled>Download</button>
     </div>
 
+    <!-- Instagram-specific controls -->
+    <div id="instagramControls" style="display: none;">
+      <div id="monitoringStatus" class="monitoring-status" style="display: none;">
+        <div class="monitoring-indicator">
+          <span class="pulse-dot"></span>
+          <span>Monitoring for images...</span>
+        </div>
+        <div class="image-counter">
+          <strong id="imageCount">0</strong> images found
+        </div>
+        <div class="monitoring-hint">Scroll through the carousel to discover more images</div>
+      </div>
+      <div class="button-group">
+        <button id="startMonitoringBtn" class="btn secondary">Start Monitoring</button>
+        <button id="stopMonitoringBtn" class="btn secondary" style="display: none;">Stop Monitoring</button>
+        <button id="downloadInstaBtn" class="btn primary" style="display: none;">Download Images</button>
+      </div>
+    </div>
+
     <div id="status" class="status-msg"></div>
   </div>
   <script src="popup.js"></script>

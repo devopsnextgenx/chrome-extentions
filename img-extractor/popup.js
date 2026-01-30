@@ -3,17 +3,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const actressNameInput = document.getElementById('actressName');
     const selectElementBtn = document.getElementById('selectElementBtn');
     const downloadBtn = document.getElementById('downloadBtn');
+    const downloadInstaBtn = document.getElementById('downloadInstaBtn');
     const statusMsg = document.getElementById('status');
     const folderPathContainer = document.getElementById('folderPathContainer');
     const folderPathDisplay = document.getElementById('folderPathDisplay');
     const folderIndicator = document.getElementById('folderIndicator');
     const copyFolderBtn = document.getElementById('copyFolderBtn');
 
+    // Instagram monitoring elements
+    const instagramControls = document.getElementById('instagramControls');
+    const startMonitoringBtn = document.getElementById('startMonitoringBtn');
+    const stopMonitoringBtn = document.getElementById('stopMonitoringBtn');
+    const monitoringStatus = document.getElementById('monitoringStatus');
+    const imageCount = document.getElementById('imageCount');
+
     let isSelecting = false;
     let currentFolderPath = '';
     let currentFullFolderPath = '';
     let currentFolderExists = false;
     let currentApiPath = '';
+    let isMonitoring = false;
 
     // Load persisted settings
     const data = await chrome.storage.local.get(['defaultLocation', 'actressName']);
@@ -23,6 +32,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check current status when popup opens
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
+        // Check if we are on Instagram
+        if (tab.url && tab.url.includes("instagram.com")) {
+            // Show Instagram controls, hide regular controls
+            if (selectElementBtn) selectElementBtn.style.display = 'none';
+            if (downloadBtn) downloadBtn.style.display = 'none';
+            if (instagramControls) instagramControls.style.display = 'block';
+        } else {
+            // Show regular controls, hide Instagram controls
+            if (selectElementBtn) selectElementBtn.style.display = 'block';
+            if (downloadBtn) downloadBtn.style.display = 'block';
+            if (instagramControls) instagramControls.style.display = 'none';
+        }
+
         chrome.tabs.sendMessage(tab.id, { action: 'getStatus' }, (response) => {
             if (chrome.runtime.lastError) return;
             if (response) {
@@ -73,6 +95,48 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateUI();
         });
     });
+
+    // Start Monitoring button handler
+    if (startMonitoringBtn) {
+        startMonitoringBtn.addEventListener('click', async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+
+            const options = {
+                defaultLocation: defaultLocationInput.value,
+                actressName: actressNameInput.value
+            };
+
+            chrome.tabs.sendMessage(tab.id, { action: 'start_instagram_monitoring', options });
+        });
+    }
+
+    // Stop Monitoring button handler
+    if (stopMonitoringBtn) {
+        stopMonitoringBtn.addEventListener('click', async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+
+            chrome.tabs.sendMessage(tab.id, { action: 'stop_instagram_monitoring' });
+        });
+    }
+
+    // Download Instagram button handler
+    if (downloadInstaBtn) {
+        downloadInstaBtn.addEventListener('click', async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+
+            const options = {
+                defaultLocation: defaultLocationInput.value,
+                actressName: actressNameInput.value
+            };
+
+            statusMsg.textContent = 'Extracting Instagram images...';
+
+            chrome.tabs.sendMessage(tab.id, { action: 'extract_instagram_images', options });
+        });
+    }
 
     // Download button handler
     downloadBtn.addEventListener('click', async () => {
@@ -146,6 +210,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (message.action === 'selectionCanceled') {
             isSelecting = false;
             updateUI();
+        } else if (message.action === 'instagram-extraction-started') {
+            const folderText = message.folderName ? ` to '${message.folderName}'` : '';
+            statusMsg.innerHTML = `Found ${message.count} images.<br>Downloading${folderText}...`;
+            statusMsg.style.color = 'lightgreen';
+        } else if (message.action === 'instagram-extraction-failed') {
+            statusMsg.textContent = message.reason || 'Extraction failed.';
+            statusMsg.style.color = '#ff6b6b';
+        } else if (message.action === 'instagram-monitoring-started') {
+            isMonitoring = true;
+            updateInstagramMonitoringUI(message.count);
+            statusMsg.textContent = 'Monitoring started. Scroll through the carousel.';
+            statusMsg.style.color = '#4CAF50';
+        } else if (message.action === 'instagram-monitoring-stopped') {
+            isMonitoring = false;
+            updateInstagramMonitoringUI(message.finalCount || 0);
+            statusMsg.textContent = `Monitoring stopped. ${message.finalCount || 0} images cached.`;
+            statusMsg.style.color = '#888';
+        } else if (message.action === 'instagram-images-discovered') {
+            updateInstagramMonitoringUI(message.count);
         }
     });
 
@@ -163,6 +246,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentFolderPath = '';
             currentFullFolderPath = '';
             currentFolderExists = false;
+        }
+    }
+
+    function updateInstagramMonitoringUI(count) {
+        if (imageCount) {
+            imageCount.textContent = count;
+        }
+
+        if (isMonitoring) {
+            // Show monitoring status
+            if (monitoringStatus) monitoringStatus.style.display = 'block';
+            if (startMonitoringBtn) startMonitoringBtn.style.display = 'none';
+            if (stopMonitoringBtn) stopMonitoringBtn.style.display = 'inline-block';
+
+            // Show download button if images found
+            if (downloadInstaBtn) {
+                if (count > 0) {
+                    downloadInstaBtn.style.display = 'inline-block';
+                    downloadInstaBtn.textContent = `Download ${count} Image${count !== 1 ? 's' : ''}`;
+                } else {
+                    downloadInstaBtn.style.display = 'none';
+                }
+            }
+        } else {
+            // Hide monitoring status
+            if (monitoringStatus) monitoringStatus.style.display = 'none';
+            if (startMonitoringBtn) startMonitoringBtn.style.display = 'inline-block';
+            if (stopMonitoringBtn) stopMonitoringBtn.style.display = 'none';
+            if (downloadInstaBtn) downloadInstaBtn.style.display = 'none';
         }
     }
 });
