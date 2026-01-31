@@ -2,9 +2,10 @@
 
 .img-extractor-panel {
     position: fixed;
-    bottom: 20px;
+    top: 500px;
     right: 0px;
     width: 320px;
+    height: 550px;
     background: rgba(255, 255, 255, 0.98);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
