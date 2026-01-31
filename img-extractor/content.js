@@ -24,6 +24,7 @@
   let instagramImageCache = new Set();
   let instagramVideoCache = new Set();
   let instagramMaxArea = 0;
+  let instagramScanTimer = null;
 
   // Helper function to check if current site is in allowed list
   function isAllowedSite() {
@@ -981,6 +982,59 @@
     return sources.length > 0 ? sources[0].url : null;
   }
 
+  function getLargestImageFromSrcsetWithSize(srcset) {
+    if (!srcset) return null;
+    const sources = srcset.split(',').map(s => {
+      const [url, size] = s.trim().split(/\s+/);
+      let width = 0;
+      if (size && size.endsWith('w')) {
+        width = parseInt(size, 10);
+      }
+      return { url, width: Number.isFinite(width) ? width : 0 };
+    }).filter(s => s.url);
+
+    sources.sort((a, b) => b.width - a.width);
+    return sources.length > 0 ? sources[0] : null;
+  }
+
+  function getBestImageCandidate(img) {
+    const candidates = [];
+
+    const currentSrc = img.currentSrc || img.src;
+    const currentWidth = img.naturalWidth || img.width || 0;
+    if (currentSrc) {
+      candidates.push({ url: currentSrc, width: currentWidth });
+    }
+
+    const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+    if (dataSrc) {
+      candidates.push({ url: dataSrc, width: 0 });
+    }
+
+    const srcset = img.srcset || img.getAttribute('data-srcset');
+    const srcsetBest = getLargestImageFromSrcsetWithSize(srcset);
+    if (srcsetBest) {
+      candidates.push(srcsetBest);
+    }
+
+    const picture = img.closest('picture');
+    if (picture) {
+      const sources = Array.from(picture.querySelectorAll('source'));
+      sources.forEach(source => {
+        const sourceSrcset = source.srcset || source.getAttribute('data-srcset');
+        const sourceBest = getLargestImageFromSrcsetWithSize(sourceSrcset);
+        if (sourceBest) {
+          candidates.push(sourceBest);
+        }
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => (b.width || 0) - (a.width || 0));
+    return candidates[0];
+  }
+
   async function extractInstagramImages(options, mediaType = 'all') {
     console.log(`Starting Instagram extraction for: ${mediaType}...`);
 
@@ -1363,8 +1417,8 @@
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.tagName === 'IMG' || node.tagName === 'VIDEO' ||
-                node.querySelector('img') || node.querySelector('video')) {
+              if (node.tagName === 'IMG' || node.tagName === 'VIDEO' || node.tagName === 'SOURCE' ||
+                node.querySelector('img, video, source')) {
                 shouldScan = true;
                 break;
               }
@@ -1374,7 +1428,7 @@
 
         // Check if src/srcset attributes changed
         if (mutation.type === 'attributes' &&
-          (mutation.target.tagName === 'IMG' || mutation.target.tagName === 'VIDEO')) {
+          (mutation.target.tagName === 'IMG' || mutation.target.tagName === 'VIDEO' || mutation.target.tagName === 'SOURCE')) {
           shouldScan = true;
         }
 
@@ -1383,7 +1437,10 @@
 
       if (shouldScan) {
         // Debounce scanning to avoid excessive processing
-        setTimeout(() => scanForInstagramMedia(), 300);
+        if (instagramScanTimer) {
+          clearTimeout(instagramScanTimer);
+        }
+        instagramScanTimer = setTimeout(() => scanForInstagramMedia(), 300);
       }
     });
 
@@ -1425,6 +1482,11 @@
     if (instagramObserver) {
       instagramObserver.disconnect();
       instagramObserver = null;
+    }
+
+    if (instagramScanTimer) {
+      clearTimeout(instagramScanTimer);
+      instagramScanTimer = null;
     }
 
     instagramMonitoring = false;
@@ -1510,21 +1572,31 @@
     const height = img.naturalHeight || img.height;
     const area = width * height;
 
+    const bestCandidate = getBestImageCandidate(img);
+    if (!bestCandidate || !bestCandidate.url) {
+      return false;
+    }
+
+    const bestUrl = bestCandidate.url;
+    if (bestUrl.startsWith('data:')) {
+      return false;
+    }
+
+    const looksLikeInstagramMedia = /scontent|cdninstagram|fbcdn/i.test(bestUrl);
+
     // Filter by area (same logic as extraction)
-    if (instagramMaxArea >= 10000 && area < (instagramMaxArea * 0.4)) {
-      return false;
-    }
+    if (width > 0 && height > 0) {
+      if (instagramMaxArea >= 10000 && area < (instagramMaxArea * 0.4)) {
+        return false;
+      }
 
-    if (instagramMaxArea < 10000 && area <= 100) {
+      if (instagramMaxArea < 10000 && area <= 100) {
+        return false;
+      }
+    } else if (bestCandidate.width && bestCandidate.width < 320) {
       return false;
-    }
-
-    // Get best quality URL
-    let bestUrl = null;
-    if (img.srcset) {
-      bestUrl = getLargestImageFromSrcset(img.srcset);
-    } else {
-      bestUrl = img.src;
+    } else if (!bestCandidate.width && !looksLikeInstagramMedia) {
+      return false;
     }
 
     if (bestUrl && !instagramImageCache.has(bestUrl)) {
