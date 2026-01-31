@@ -731,7 +731,7 @@
         <div class="img-batch-header">
             <span>Downloading Images</span>
             <div class="img-batch-actions">
-                <button class="img-batch-continue" id="continue-${batchId}" style="display: none;" title="Continue Now">Continue</button>
+                <button class="img-batch-continue" id="continue-${batchId}" style="display: block;" title="Continue Now">Continue</button>
                 <button class="img-batch-cancel" title="Cancel this batch">&times;</button>
             </div>
         </div>
