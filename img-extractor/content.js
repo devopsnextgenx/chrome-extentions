@@ -860,7 +860,7 @@
     }
   }
 
-  function handleWaitingToPause(message) {
+  function handleWaitingToResume(message) {
     const { batchId, timeout } = message;
     const card = batchCards.get(batchId);
     if (!card) return;
@@ -891,7 +891,6 @@
         if (countdownTime) countdownTime.textContent = timeLeft;
       }, 1000);
     } else {
-      // Old method
       const continueBtn = card.querySelector(`#continue-${batchId}`);
       const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
       const countdownText = card.querySelector(`#countdown-${batchId}`);
@@ -916,31 +915,6 @@
         }
         if (countdownText) countdownText.textContent = timeLeft;
       }, 1000);
-    }
-  }
-
-  function handleWaitingToResume(message) {
-    const { batchId, timeout } = message;
-    const card = batchCards.get(batchId);
-    if (!card) return;
-
-    // Check if using panel progress area
-    const isPanelProgress = card.id === 'panel-progress-area';
-    
-    if (isPanelProgress) {
-      const countdown = card.querySelector('#panel-progress-countdown');
-      const status = card.querySelector('#panel-progress-status');
-
-      if (countdown) countdown.style.display = 'none';
-      if (status) status.textContent = 'Downloading...';
-    } else {
-      const continueBtn = card.querySelector(`#continue-${batchId}`);
-      const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
-      const status = card.querySelector(`#status-${batchId}`);
-
-      if (continueBtn) continueBtn.style.display = 'none';
-      if (countdownContainer) countdownContainer.style.display = 'none';
-      if (status) status.textContent = 'Downloading...';
     }
   }
 
