@@ -1,4 +1,12 @@
 (function () {
+  // Whitelist of domains where injected UI should be displayed by default
+  const ALLOWED_DOMAINS = [
+    'instagram.com',
+    'ragalahari.com',
+    'idlebrain.com',
+    'localhost'
+  ];
+
   let hoverElement = null;
   let selectedElement = null;
   let currentFolderPath = '';
@@ -17,15 +25,32 @@
   let instagramVideoCache = new Set();
   let instagramMaxArea = 0;
 
+  // Helper function to check if current site is in allowed list
+  function isAllowedSite() {
+    const hostname = window.location.hostname;
+    return ALLOWED_DOMAINS.some(domain => hostname.includes(domain));
+  }
+
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'toggleSelection' || request.action === 'start-selection') {
-      isSelecting = !isSelecting;
-      if (isSelecting) {
-        createUI();
-      } else {
-        removeUI();
-        clearHighlighter();
+      // For non-Instagram sites, toggle selection mode
+      if (!window.location.hostname.includes('instagram.com')) {
+        isSelecting = !isSelecting;
+        if (isSelecting) {
+          if (!uiContainer) createUI();
+          // Show UI and enable selection
+          if (uiContainer) {
+            uiContainer.style.display = 'block';
+            if (uiContainer.classList.contains('minimized')) {
+              uiContainer.classList.remove('minimized');
+              const minimizeBtn = uiContainer.querySelector('#panel-minimize');
+              if (minimizeBtn) minimizeBtn.textContent = '−';
+            }
+          }
+        } else {
+          clearHighlighter();
+        }
       }
       if (sendResponse) sendResponse({ isSelecting });
     } else if (request.action === 'start-download') {
@@ -70,63 +95,388 @@
   function createUI() {
     if (uiContainer) return;
 
+    const isInstagram = window.location.hostname.includes('instagram.com');
+
     uiContainer = document.createElement('div');
     uiContainer.id = 'img-extractor-ui';
+    uiContainer.className = 'img-extractor-panel';
     uiContainer.innerHTML = `
-            <div class="img-ui-header"><span>🖼️</span> Img Extractor</div>
-            <div class="img-ui-status" id="img-ui-status">Hover and click an element</div>
-            <div id="img-ui-folder-container" class="img-ui-folder-container" style="display: none;">
-                <span id="img-ui-indicator" class="indicator-dot"></span>
-                <code id="img-ui-folder-path"></code>
-                <button id="img-ui-copy-path" class="img-ui-copy-btn" title="Copy Folder Name">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                </button>
+            <div class="img-ui-header panel-header" id="panel-header">
+                <span class="panel-title">🖼️ Img Extractor</span>
+                <div class="panel-controls">
+                    <button class="panel-btn" id="panel-minimize" title="Minimize">−</button>
+                    <button class="panel-btn" id="panel-close" title="Close">×</button>
+                </div>
             </div>
-            <div class="img-ui-controls">
-                <button class="img-ui-btn img-ui-btn-secondary" id="img-ui-cancel">Cancel</button>
-                <button class="img-ui-btn img-ui-btn-primary" id="img-ui-download" disabled>Download</button>
+            <div class="panel-content" id="panel-content">
+                <div class="panel-form-group">
+                    <label for="panel-default-location">Default Location</label>
+                    <input type="text" id="panel-default-location" placeholder="e.g., actresses" value="">
+                </div>
+                
+                <div class="panel-form-group">
+                    <label for="panel-actress-name">Actress/Model Name</label>
+                    <input type="text" id="panel-actress-name" placeholder="Enter name">
+                </div>
+
+                <div class="img-ui-status" id="img-ui-status" style="margin: 8px 0; font-size: 12px; color: #64748b;">${isInstagram ? 'Ready to monitor' : 'Hover and click an element'}</div>
+                
+                <div id="img-ui-folder-container" class="img-ui-folder-container panel-folder-path" style="display: none;">
+                    <label style="font-size: 11px; color: #64748b; margin-bottom: 4px;">Destination Folder</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="img-ui-indicator" class="indicator-dot"></span>
+                        <code id="img-ui-folder-path" style="flex: 1;"></code>
+                        <button id="img-ui-copy-path" class="img-ui-copy-btn" title="Copy Folder Name">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="panel-monitoring-status" class="panel-monitoring-status" style="display: none;">
+                    <div class="panel-monitoring-indicator">
+                        <span class="panel-pulse-dot"></span>
+                        <span>Monitoring for media...</span>
+                    </div>
+                    <div class="panel-media-counters">
+                        <div class="panel-counter-item">
+                            <strong id="panel-image-count">0</strong>
+                            <span>images</span>
+                        </div>
+                        <div class="panel-counter-divider">•</div>
+                        <div class="panel-counter-item">
+                            <strong id="panel-video-count">0</strong>
+                            <span>videos</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-button-group instagram-only" style="display: ${isInstagram ? 'flex' : 'none'};">
+                    <button class="panel-button secondary" id="panel-start-monitoring">Start Monitoring</button>
+                    <button class="panel-button secondary" id="panel-stop-monitoring" style="display: none;">Stop Monitoring</button>
+                </div>
+
+                <div class="panel-button-group instagram-only" style="display: ${isInstagram ? 'flex' : 'none'};">
+                    <button class="panel-button primary" id="panel-download-images" disabled>Download Images</button>
+                    <button class="panel-button primary" id="panel-download-videos" disabled>Download Videos</button>
+                </div>
+
+                <div class="img-ui-controls non-instagram-only" style="display: ${isInstagram ? 'none' : 'flex'}; flex-direction: column; gap: 8px;">
+                    <button class="img-ui-btn img-ui-btn-secondary" id="img-ui-select-element" style="width: 100%;">
+                        ${isSelecting ? '✓ Selecting...' : 'Select Element'}
+                    </button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="img-ui-btn img-ui-btn-secondary" id="img-ui-cancel" style="display: ${isSelecting ? 'flex' : 'none'};">Cancel</button>
+                        <button class="img-ui-btn img-ui-btn-primary" id="img-ui-download" disabled style="flex: 1;">Download</button>
+                    </div>
+                </div>
+
+                <!-- Progress Display Area -->
+                <div id="panel-progress-area" class="panel-progress-area" style="display: none;">
+                    <div class="panel-progress-header">
+                        <span id="panel-progress-title">Downloading Images</span>
+                        <button class="panel-progress-cancel" id="panel-progress-cancel">&times;</button>
+                    </div>
+                    <div class="panel-progress-bar-container">
+                        <div class="panel-progress-bar" id="panel-progress-bar"></div>
+                    </div>
+                    <div class="panel-progress-stats">
+                        <span id="panel-progress-text">0/0</span>
+                        <span id="panel-progress-status">Downloading...</span>
+                    </div>
+                    <div id="panel-progress-countdown" class="panel-progress-countdown" style="display: none;">
+                        Resuming in <b id="panel-countdown-time">15</b>s...
+                        <button class="panel-button secondary" id="panel-continue-now" style="margin-top: 8px; width: 100%;">Continue Now</button>
+                    </div>
+                </div>
             </div>
         `;
 
     document.body.appendChild(uiContainer);
 
-    uiContainer.querySelector('#img-ui-copy-path').addEventListener('click', () => {
-      if (currentFolderPath) {
-        navigator.clipboard.writeText(currentFolderPath).then(() => {
-          const btn = uiContainer.querySelector('#img-ui-copy-path');
-          btn.classList.add('copied');
-          setTimeout(() => btn.classList.remove('copied'), 2000);
+    // Setup panel controls
+    setupPanelControls();
+
+    // Setup drag functionality
+    setupDragFunctionality();
+
+    // Load saved settings and position
+    loadPanelSettings();
+  }
+
+  function setupPanelControls() {
+    if (!uiContainer) return;
+
+    const isInstagram = window.location.hostname.includes('instagram.com');
+    const minimizeBtn = uiContainer.querySelector('#panel-minimize');
+    const selectElementBtn = uiContainer.querySelector('#img-ui-select-element');
+    const closeBtn = uiContainer.querySelector('#panel-close');
+    const defaultLocationInput = uiContainer.querySelector('#panel-default-location');
+    const actressNameInput = uiContainer.querySelector('#panel-actress-name');
+    const copyPathBtn = uiContainer.querySelector('#img-ui-copy-path');
+    const indicator = uiContainer.querySelector('#img-ui-indicator');
+    const cancelBtn = uiContainer.querySelector('#img-ui-cancel');
+    const downloadBtn = uiContainer.querySelector('#img-ui-download');
+    
+    if (minimizeBtn) {
+      minimizeBtn.addEventListener('click', toggleMinimize);
+    }
+    
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        if (uiContainer) {
+          uiContainer.style.display = 'none';
+          savePanelSettings();
+        }
+        clearHighlighter();
+        isSelecting = false;
+        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+      });
+    }
+
+    // Settings input handlers
+    if (defaultLocationInput) {
+      defaultLocationInput.addEventListener('input', savePanelSettings);
+    }
+    
+    if (actressNameInput) {
+      actressNameInput.addEventListener('input', savePanelSettings);
+    }
+
+    // Instagram-specific handlers
+    if (isInstagram) {
+      const startMonitoringBtn = uiContainer.querySelector('#panel-start-monitoring');
+      const stopMonitoringBtn = uiContainer.querySelector('#panel-stop-monitoring');
+      const downloadImagesBtn = uiContainer.querySelector('#panel-download-images');
+      const downloadVideosBtn = uiContainer.querySelector('#panel-download-videos');
+      
+      if (startMonitoringBtn) {
+        startMonitoringBtn.addEventListener('click', () => {
+          const options = {
+            defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
+            actressName: actressNameInput ? actressNameInput.value : ''
+          };
+          startInstagramMonitoring(options);
         });
       }
-    });
-
-    uiContainer.querySelector('#img-ui-indicator').addEventListener('click', () => {
-      if (currentFolderExists && currentApiPath) {
-        chrome.runtime.sendMessage({ action: 'open-web-folder', path: currentApiPath });
-      } else if (currentFolderExists && currentFullFolderPath) {
-        chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
+      
+      if (stopMonitoringBtn) {
+        stopMonitoringBtn.addEventListener('click', stopInstagramMonitoring);
       }
-    });
+      
+      if (downloadImagesBtn) {
+        downloadImagesBtn.addEventListener('click', () => {
+          const options = {
+            defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
+            actressName: actressNameInput ? actressNameInput.value : ''
+          };
+          extractInstagramImages(options, 'images');
+        });
+      }
+      
+      if (downloadVideosBtn) {
+        downloadVideosBtn.addEventListener('click', () => {
+          const options = {
+            defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
+            actressName: actressNameInput ? actressNameInput.value : ''
+          };
+          extractInstagramImages(options, 'videos');
+        });
+      }
+    }
 
-    uiContainer.querySelector('#img-ui-cancel').addEventListener('click', () => {
-      isSelecting = false;
-      removeUI();
-      clearHighlighter();
-      chrome.runtime.sendMessage({ action: 'selectionCanceled' });
-    });
-
-    uiContainer.querySelector('#img-ui-download').addEventListener('click', () => {
-      if (selectedElement) {
-        chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
-          initiateDownload({
-            defaultLocation: data.defaultLocation || 'actresses',
-            actressName: data.actressName || ''
+    if (copyPathBtn) {
+      copyPathBtn.addEventListener('click', () => {
+        if (currentFolderPath) {
+          navigator.clipboard.writeText(currentFolderPath).then(() => {
+            const btn = uiContainer.querySelector('#img-ui-copy-path');
+            if (btn) {
+              btn.classList.add('copied');
+              setTimeout(() => btn.classList.remove('copied'), 2000);
+            }
           });
-          isSelecting = false;
-          removeUI();
+        }
+      });
+    }
+
+    if (indicator) {
+      indicator.addEventListener('click', () => {
+        if (currentFolderExists && currentApiPath) {
+          chrome.runtime.sendMessage({ action: 'open-web-folder', path: currentApiPath });
+        } else if (currentFolderExists && currentFullFolderPath) {
+          chrome.runtime.sendMessage({ action: 'open-folder', path: currentFullFolderPath });
+        }
+      });
+    }
+
+    if (selectElementBtn) {
+      selectElementBtn.addEventListener('click', () => {
+        isSelecting = !isSelecting;
+        updateSelectButtonState();
+        if (isSelecting) {
+          // Show cancel button when selecting
+          if (cancelBtn) cancelBtn.style.display = 'flex';
+        } else {
           clearHighlighter();
+          if (cancelBtn) cancelBtn.style.display = 'none';
+        }
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        isSelecting = false;
+        clearHighlighter();
+        updateSelectButtonState();
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+      });
+    }
+
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', () => {
+        if (selectedElement) {
+          const options = {
+            defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
+            actressName: actressNameInput ? actressNameInput.value : ''
+          };
+          initiateDownload(options);
+          isSelecting = false;
+          clearHighlighter();
+          updateSelectButtonState();
+          if (cancelBtn) cancelBtn.style.display = 'none';
           chrome.runtime.sendMessage({ action: 'selectionCanceled' });
-        });
+        }
+      });
+    }
+  }
+
+  function updateSelectButtonState() {
+    if (!uiContainer) return;
+    const selectBtn = uiContainer.querySelector('#img-ui-select-element');
+    if (selectBtn) {
+      selectBtn.textContent = isSelecting ? '✓ Selecting...' : 'Select Element';
+      selectBtn.classList.toggle('active', isSelecting);
+    }
+  }
+
+  // Drag and panel management functions
+  let isDragging = false;
+  let currentX = 0;
+  let currentY = 0;
+  let initialX = 0;
+  let initialY = 0;
+  let xOffset = 0;
+  let yOffset = 0;
+
+  function setupDragFunctionality() {
+    const header = uiContainer.querySelector('#panel-header');
+    if (!header) return;
+
+    header.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+  }
+
+  function dragStart(e) {
+    if (e.target.closest('.panel-controls')) return;
+
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+
+    if (e.target.closest('#panel-header')) {
+      isDragging = true;
+      if (uiContainer) uiContainer.classList.add('dragging');
+    }
+  }
+
+  function drag(e) {
+    if (isDragging && uiContainer) {
+      e.preventDefault();
+      currentX = e.clientX - initialX;
+      currentY = e.clientY - initialY;
+
+      xOffset = currentX;
+      yOffset = currentY;
+
+      setTranslate(currentX, currentY, uiContainer);
+    }
+  }
+
+  function dragEnd(e) {
+    if (isDragging) {
+      initialX = currentX;
+      initialY = currentY;
+      isDragging = false;
+      if (uiContainer) {
+        uiContainer.classList.remove('dragging');
+        savePanelSettings();
+      }
+    }
+  }
+
+  function setTranslate(xPos, yPos, el) {
+    el.style.transform = `translate(${xPos}px, ${yPos}px)`;
+  }
+
+  function toggleMinimize() {
+    if (!uiContainer) return;
+    uiContainer.classList.toggle('minimized');
+    const btn = uiContainer.querySelector('#panel-minimize');
+    if (btn) {
+      btn.textContent = uiContainer.classList.contains('minimized') ? '+' : '−';
+    }
+    savePanelSettings();
+  }
+
+  function savePanelSettings() {
+    if (!uiContainer) return;
+    
+    const defaultLocationInput = uiContainer.querySelector('#panel-default-location');
+    const actressNameInput = uiContainer.querySelector('#panel-actress-name');
+    
+    const settings = {
+      defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
+      actressName: actressNameInput ? actressNameInput.value : '',
+      panelState: {
+        x: xOffset,
+        y: yOffset,
+        minimized: uiContainer.classList.contains('minimized'),
+        visible: uiContainer.style.display !== 'none'
+      }
+    };
+    
+    chrome.storage.local.set(settings);
+  }
+
+  function loadPanelSettings() {
+    if (!uiContainer) return;
+    
+    chrome.storage.local.get(['defaultLocation', 'actressName', 'panelState'], (result) => {
+      const defaultLocationInput = uiContainer.querySelector('#panel-default-location');
+      const actressNameInput = uiContainer.querySelector('#panel-actress-name');
+      
+      if (result.defaultLocation && defaultLocationInput) {
+        defaultLocationInput.value = result.defaultLocation;
+      }
+      if (result.actressName && actressNameInput) {
+        actressNameInput.value = result.actressName;
+      }
+      
+      if (result.panelState) {
+        const state = result.panelState;
+        xOffset = state.x || 0;
+        yOffset = state.y || 0;
+        setTranslate(xOffset, yOffset, uiContainer);
+
+        if (state.minimized) {
+          uiContainer.classList.add('minimized');
+          const minimizeBtn = uiContainer.querySelector('#panel-minimize');
+          if (minimizeBtn) minimizeBtn.textContent = '+';
+        }
+
+        if (state.visible === false) {
+          uiContainer.style.display = 'none';
+        }
       }
     });
   }
@@ -326,14 +676,53 @@
   }
 
   function ensureProgressContainer() {
-    if (!progressContainer) {
-      progressContainer = document.createElement('div');
-      progressContainer.id = 'img-extractor-progress-container';
-      document.body.appendChild(progressContainer);
+    // For backward compatibility, but we now use the panel progress area
+    if (!uiContainer) {
+      // Fallback to old method if UI not present
+      if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'img-extractor-progress-container';
+        document.body.appendChild(progressContainer);
+      }
     }
   }
 
   function createBatchCard(batchId) {
+    // Use panel progress area if available
+    if (uiContainer) {
+      const progressArea = uiContainer.querySelector('#panel-progress-area');
+      if (progressArea) {
+        progressArea.style.display = 'block';
+        progressArea.dataset.batchId = batchId;
+        
+        // Setup cancel handler
+        const cancelBtn = progressArea.querySelector('#panel-progress-cancel');
+        if (cancelBtn) {
+          cancelBtn.onclick = () => {
+            chrome.runtime.sendMessage({ action: 'cancel-download', batchId: batchId });
+            const status = progressArea.querySelector('#panel-progress-status');
+            if (status) status.textContent = 'Cancelling...';
+            progressArea.classList.add('cancelling');
+          };
+        }
+        
+        // Setup continue now handler
+        const continueBtn = progressArea.querySelector('#panel-continue-now');
+        if (continueBtn) {
+          continueBtn.onclick = () => {
+            chrome.runtime.sendMessage({ action: 'resume-download', batchId: batchId });
+            const countdown = progressArea.querySelector('#panel-progress-countdown');
+            if (countdown) countdown.style.display = 'none';
+            const status = progressArea.querySelector('#panel-progress-status');
+            if (status) status.textContent = 'Resuming...';
+          };
+        }
+        
+        return progressArea;
+      }
+    }
+    
+    // Fallback to old method
     ensureProgressContainer();
     const card = document.createElement('div');
     card.className = 'img-batch-card';
@@ -370,88 +759,163 @@
 
     card.querySelector('.img-batch-cancel').onclick = () => {
       chrome.runtime.sendMessage({ action: 'cancel-download', batchId: batchId });
-      card.querySelector('#status-' + batchId).textContent = 'Cancelling...';
-      card.classList.add('cancelling');
-      card.querySelector(`#continue-${batchId}`).style.display = 'none';
-      card.querySelector(`#countdown-container-${batchId}`).style.display = 'none';
     };
 
     card.querySelector('.img-batch-continue').onclick = () => {
       chrome.runtime.sendMessage({ action: 'resume-download', batchId: batchId });
       card.querySelector(`#continue-${batchId}`).style.display = 'none';
       card.querySelector(`#countdown-container-${batchId}`).style.display = 'none';
-      card.querySelector('#status-' + batchId).textContent = 'Resuming...';
     };
 
-    card.querySelector(`#copy-${batchId}`).onclick = () => {
-      const urlText = card.querySelector(`#failed-url-${batchId}`).textContent;
-      navigator.clipboard.writeText(urlText).then(() => {
-        const copyBtn = card.querySelector(`#copy-${batchId}`);
-        const originalText = copyBtn.textContent;
-        copyBtn.textContent = 'Copied!';
-        copyBtn.classList.add('copied');
-        setTimeout(() => {
-          copyBtn.textContent = originalText;
-          copyBtn.classList.remove('copied');
-        }, 2000);
-      });
-    };
-
+    batchCards.set(batchId, card);
     return card;
   }
 
   function updateProgress(message) {
     const { batchId, progress } = message;
     let card = batchCards.get(batchId);
-
     if (!card) {
       card = createBatchCard(batchId);
+      if (!card) return;
       batchCards.set(batchId, card);
     }
 
-    const fill = card.querySelector(`#fill-${batchId}`);
-    const text = card.querySelector(`#text-${batchId}`);
-    const status = card.querySelector(`#status-${batchId}`);
+    // Check if using panel progress area
+    const isPanelProgress = card.id === 'panel-progress-area';
+    
+    if (isPanelProgress) {
+      const progressBar = card.querySelector('#panel-progress-bar');
+      const progressText = card.querySelector('#panel-progress-text');
+      const status = card.querySelector('#panel-progress-status');
 
-    if (fill && text) {
-      const percent = (progress.downloaded / progress.total) * 100;
-      fill.style.width = `${percent}%`;
-      text.textContent = `${progress.downloaded}/${progress.total}`;
+      if (progressBar && progressText) {
+        const percent = (progress.downloaded / progress.total) * 100;
+        progressBar.style.width = `${percent}%`;
+        progressText.textContent = `${progress.downloaded}/${progress.total}`;
 
-      // Hide pause UI if we moved past the first image
-      if (progress.downloaded > 1) {
-        const continueBtn = card.querySelector(`#continue-${batchId}`);
-        const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
-        if (continueBtn) continueBtn.style.display = 'none';
-        if (countdownContainer) countdownContainer.style.display = 'none';
-        if (status.textContent === 'Paused') status.textContent = 'Downloading...';
-      }
+        // Hide countdown if we moved past the first image
+        if (progress.downloaded > 1) {
+          const countdown = card.querySelector('#panel-progress-countdown');
+          if (countdown) countdown.style.display = 'none';
+          if (status && status.textContent === 'Paused') status.textContent = 'Downloading...';
+        }
 
-      if (progress.firstFailedUrl) {
-        const failedContainer = card.querySelector(`#failed-container-${batchId}`);
-        const failedUrlText = card.querySelector(`#failed-url-${batchId}`);
-        if (failedContainer && failedUrlText) {
-          failedUrlText.textContent = progress.firstFailedUrl;
-          failedContainer.style.display = 'block';
+        if (progress.downloaded === progress.total) {
+          if (status) status.textContent = 'Completed ✓';
+          card.classList.add('completed');
+          // Hide progress after a delay
+          setTimeout(() => {
+            card.style.display = 'none';
+            card.classList.remove('completed');
+            batchCards.delete(batchId);
+          }, 3000);
         }
       }
+    } else {
+      // Old method for backward compatibility
+      const fill = card.querySelector(`#fill-${batchId}`);
+      const text = card.querySelector(`#text-${batchId}`);
+      const status = card.querySelector(`#status-${batchId}`);
 
-      if (progress.downloaded === progress.total) {
-        status.textContent = 'Completed';
-        card.classList.add('completed');
-        // Remove card after some time
-        setTimeout(() => {
-          card.classList.add('fade-out');
+      if (fill && text) {
+        const percent = (progress.downloaded / progress.total) * 100;
+        fill.style.width = `${percent}%`;
+        text.textContent = `${progress.downloaded}/${progress.total}`;
+
+        // Hide pause UI if we moved past the first image
+        if (progress.downloaded > 1) {
+          const continueBtn = card.querySelector(`#continue-${batchId}`);
+          const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+          if (continueBtn) continueBtn.style.display = 'none';
+          if (countdownContainer) countdownContainer.style.display = 'none';
+          if (status && status.textContent === 'Paused') status.textContent = 'Downloading...';
+        }
+
+        if (progress.firstFailedUrl) {
+          const failedContainer = card.querySelector(`#failed-container-${batchId}`);
+          const failedUrlText = card.querySelector(`#failed-url-${batchId}`);
+          if (failedContainer && failedUrlText) {
+            failedUrlText.textContent = progress.firstFailedUrl;
+            failedContainer.style.display = 'block';
+          }
+        }
+
+        if (progress.downloaded === progress.total) {
+          if (status) status.textContent = 'Completed';
+          card.classList.add('completed');
+          // Remove card after some time
           setTimeout(() => {
-            card.remove();
-            batchCards.delete(batchId);
-            if (batchCards.size === 0 && progressContainer) {
-              progressContainer.remove();
-              progressContainer = null;
-            }
-          }, 500);
-        }, 3000);
+            card.classList.add('fade-out');
+            setTimeout(() => {
+              card.remove();
+              batchCards.delete(batchId);
+              if (batchCards.size === 0 && progressContainer) {
+                progressContainer.remove();
+                progressContainer = null;
+              }
+            }, 500);
+          }, 3000);
+        }
       }
+    }
+  }
+
+  function handleWaitingToPause(message) {
+    const { batchId, timeout } = message;
+    const card = batchCards.get(batchId);
+    if (!card) return;
+
+    // Check if using panel progress area
+    const isPanelProgress = card.id === 'panel-progress-area';
+    
+    if (isPanelProgress) {
+      const countdown = card.querySelector('#panel-progress-countdown');
+      const countdownTime = card.querySelector('#panel-countdown-time');
+      const status = card.querySelector('#panel-progress-status');
+
+      if (status) status.textContent = 'Paused';
+      if (countdown) countdown.style.display = 'block';
+
+      let timeLeft = timeout;
+      if (countdownTime) countdownTime.textContent = timeLeft;
+
+      const intervalId = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0 || !batchCards.has(batchId) || card.classList.contains('cancelling') || (countdown && countdown.style.display === 'none')) {
+          clearInterval(intervalId);
+          if (timeLeft <= 0 && countdown) {
+            countdown.style.display = 'none';
+          }
+          return;
+        }
+        if (countdownTime) countdownTime.textContent = timeLeft;
+      }, 1000);
+    } else {
+      // Old method
+      const continueBtn = card.querySelector(`#continue-${batchId}`);
+      const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+      const countdownText = card.querySelector(`#countdown-${batchId}`);
+      const status = card.querySelector(`#status-${batchId}`);
+
+      if (status) status.textContent = 'Paused';
+      if (continueBtn) continueBtn.style.display = 'block';
+      if (countdownContainer) countdownContainer.style.display = 'block';
+
+      let timeLeft = timeout;
+      if (countdownText) countdownText.textContent = timeLeft;
+
+      const intervalId = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0 || !batchCards.has(batchId) || card.classList.contains('cancelling') || (continueBtn && continueBtn.style.display === 'none')) {
+          clearInterval(intervalId);
+          if (timeLeft <= 0) {
+            if (continueBtn) continueBtn.style.display = 'none';
+            if (countdownContainer) countdownContainer.style.display = 'none';
+          }
+          return;
+        }
+        if (countdownText) countdownText.textContent = timeLeft;
+      }, 1000);
     }
   }
 
@@ -460,30 +924,24 @@
     const card = batchCards.get(batchId);
     if (!card) return;
 
-    const continueBtn = card.querySelector(`#continue-${batchId}`);
-    const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
-    const countdownText = card.querySelector(`#countdown-${batchId}`);
-    const status = card.querySelector(`#status-${batchId}`);
+    // Check if using panel progress area
+    const isPanelProgress = card.id === 'panel-progress-area';
+    
+    if (isPanelProgress) {
+      const countdown = card.querySelector('#panel-progress-countdown');
+      const status = card.querySelector('#panel-progress-status');
 
-    status.textContent = 'Paused';
-    if (continueBtn) continueBtn.style.display = 'block';
-    if (countdownContainer) countdownContainer.style.display = 'block';
+      if (countdown) countdown.style.display = 'none';
+      if (status) status.textContent = 'Downloading...';
+    } else {
+      const continueBtn = card.querySelector(`#continue-${batchId}`);
+      const countdownContainer = card.querySelector(`#countdown-container-${batchId}`);
+      const status = card.querySelector(`#status-${batchId}`);
 
-    let timeLeft = timeout;
-    if (countdownText) countdownText.textContent = timeLeft;
-
-    const intervalId = setInterval(() => {
-      timeLeft--;
-      if (timeLeft <= 0 || !batchCards.has(batchId) || card.classList.contains('cancelling') || (continueBtn && continueBtn.style.display === 'none')) {
-        clearInterval(intervalId);
-        if (timeLeft <= 0) {
-          if (continueBtn) continueBtn.style.display = 'none';
-          if (countdownContainer) countdownContainer.style.display = 'none';
-        }
-        return;
-      }
-      if (countdownText) countdownText.textContent = timeLeft;
-    }, 1000);
+      if (continueBtn) continueBtn.style.display = 'none';
+      if (countdownContainer) countdownContainer.style.display = 'none';
+      if (status) status.textContent = 'Downloading...';
+    }
   }
 
   function handleResumedDownload(message) {
@@ -501,11 +959,32 @@
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Escape' && isSelecting) {
-      isSelecting = false;
-      removeUI();
-      clearHighlighter();
-      chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+    // Ctrl+Shift+K to toggle UI visibility
+    if (e.ctrlKey && e.shiftKey && e.key === 'K') {
+      e.preventDefault();
+      if (!uiContainer) {
+        createUI();
+      } else if (uiContainer.style.display === 'none') {
+        uiContainer.style.display = 'block';
+      } else {
+        uiContainer.style.display = 'none';
+      }
+      return;
+    }
+
+    // ESC to hide UI or cancel selection
+    if (e.key === 'Escape') {
+      if (isSelecting) {
+        isSelecting = false;
+        clearHighlighter();
+        updateSelectButtonState();
+        const cancelBtn = uiContainer?.querySelector('#img-ui-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+      } else if (uiContainer) {
+        uiContainer.style.display = 'none';
+        savePanelSettings();
+      }
     }
   }
 
@@ -895,6 +1374,9 @@
     // Generate folder path
     const folderPath = generateFolderPathFromOptions(options);
 
+    // Update UI if panel is visible
+    updateMonitoringUI(true, folderPath);
+
     // Initial scan of existing media
     scanForInstagramMedia();
 
@@ -972,6 +1454,9 @@
     }
 
     instagramMonitoring = false;
+
+    // Update UI
+    updateMonitoringUI(false);
 
     // Send message to Instagram panel
     window.postMessage({
@@ -1187,7 +1672,112 @@
     return false;
   }
 
+  // Update monitoring UI state
+  function updateMonitoringUI(isMonitoring, folderPath = '') {
+    if (!uiContainer) return;
+
+    const startBtn = uiContainer.querySelector('#panel-start-monitoring');
+    const stopBtn = uiContainer.querySelector('#panel-stop-monitoring');
+    const monitoringStatus = uiContainer.querySelector('#panel-monitoring-status');
+    const folderContainer = uiContainer.querySelector('#img-ui-folder-container');
+    const folderPathElem = uiContainer.querySelector('#img-ui-folder-path');
+
+    if (startBtn && stopBtn) {
+      if (isMonitoring) {
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        if (monitoringStatus) monitoringStatus.style.display = 'block';
+        
+        if (folderPath && folderContainer && folderPathElem) {
+          folderPathElem.textContent = folderPath.split('/').pop();
+          folderContainer.style.display = 'block';
+        }
+      } else {
+        startBtn.style.display = 'block';
+        stopBtn.style.display = 'none';
+        if (monitoringStatus) monitoringStatus.style.display = 'none';
+      }
+    }
+  }
+
+  // Update media counts in UI
+  function updateMediaCounts() {
+    if (!uiContainer) return;
+
+    const imageCountElem = uiContainer.querySelector('#panel-image-count');
+    const videoCountElem = uiContainer.querySelector('#panel-video-count');
+    const downloadImagesBtn = uiContainer.querySelector('#panel-download-images');
+    const downloadVideosBtn = uiContainer.querySelector('#panel-download-videos');
+
+    if (imageCountElem) imageCountElem.textContent = instagramImageCache.size;
+    if (videoCountElem) videoCountElem.textContent = instagramVideoCache.size;
+
+    if (downloadImagesBtn) downloadImagesBtn.disabled = instagramImageCache.size === 0;
+    if (downloadVideosBtn) downloadVideosBtn.disabled = instagramVideoCache.size === 0;
+  }
+
+  // Auto-start monitoring when Instagram post is opened
+  function detectInstagramPostOpened() {
+    if (!window.location.hostname.includes('instagram.com')) return;
+
+    // Create UI first if not already created
+    if (!uiContainer) {
+      createUI();
+    }
+
+    // Check for Instagram post dialog (when a post is opened)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          const dialog = document.querySelector('div[role="dialog"]');
+          if (dialog && !instagramMonitoring) {
+            console.log('Instagram post detected, auto-starting monitoring...');
+            
+            // Get current settings
+            chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
+              const options = {
+                defaultLocation: data.defaultLocation || 'actresses',
+                actressName: data.actressName || ''
+              };
+              
+              // Auto-start monitoring
+              startInstagramMonitoring(options);
+            });
+            
+            break;
+          }
+        }
+      }
+    });
+
+    // Observe body for dialog changes
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    // Also check if we're already on a post page
+    const urlPath = window.location.pathname;
+    if (urlPath.includes('/p/') || urlPath.includes('/reel/')) {
+      console.log('Already on Instagram post page, auto-starting monitoring...');
+      
+      chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
+        const options = {
+          defaultLocation: data.defaultLocation || 'actresses',
+          actressName: data.actressName || ''
+        };
+        
+        setTimeout(() => {
+          startInstagramMonitoring(options);
+        }, 500); // Wait a bit for content to load
+      });
+    }
+  }
+
   function notifyPopupOfDiscovery() {
+    // Update UI
+    updateMediaCounts();
+
     // Send message to Instagram panel
     window.postMessage({
       type: 'IMG_EXTRACTOR_MEDIA_DISCOVERED',
@@ -1203,4 +1793,30 @@
     });
   }
 
-})();
+  // Initialize: Show panel only on allowed sites and auto-start monitoring on Instagram
+  if (isAllowedSite()) {
+    if (window.location.hostname.includes('instagram.com')) {
+      // On Instagram, create UI and start auto-detection
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          createUI();
+          detectInstagramPostOpened();
+        });
+      } else {
+        createUI();
+        detectInstagramPostOpened();
+      }
+    } else {
+      // On other allowed sites, create UI by default
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          createUI();
+        });
+      } else {
+        createUI();
+      }
+    }
+  }
+  // On non-allowed sites, UI can still be triggered via Ctrl+Shift+K or popup
+
+})(); // End of IIFE
