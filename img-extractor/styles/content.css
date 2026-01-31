@@ -449,7 +449,7 @@
 /* Panel Content */
 .panel-content {
     padding: 16px;
-    max-height: 400px;
+    max-height: 550px;
     overflow-y: auto;
 }
 

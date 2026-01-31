@@ -1793,18 +1793,16 @@
     });
   }
 
-  // Initialize: Show panel only on allowed sites and auto-start monitoring on Instagram
+  // Initialize: Show panel only on allowed sites
   if (isAllowedSite()) {
     if (window.location.hostname.includes('instagram.com')) {
-      // On Instagram, create UI and start auto-detection
+      // On Instagram, create UI (monitoring must be started manually)
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
           createUI();
-          detectInstagramPostOpened();
         });
       } else {
         createUI();
-        detectInstagramPostOpened();
       }
     } else {
       // On other allowed sites, create UI by default
