@@ -182,7 +182,7 @@
     }
 
     function setTranslate(xPos, yPos, el) {
-        el.style.transform = `translate(${xPos}px, ${yPos}px)`;
+        el.style.transform = `translate(${xPos}px, ${yPos}px); `;
     }
 
     /**
