@@ -186,6 +186,11 @@
                 return;
             }
 
+            // Disable selection mode on extract
+            isSelecting = false;
+            selectBtn.textContent = '✨ Select';
+            selectBtn.classList.remove('active');
+
             try {
                 updatePanelStatus("🔍 Extracting...");
                 const data = extractData(selectedElement);
@@ -229,6 +234,10 @@
                 setTimeout(() => {
                     extractBtn.textContent = '🔍 Extract';
                 }, 1500);
+
+                // Clear highlights but KEEP the selected element reference for future extractions if needed?
+                // Actually the user wants to DISABLE selection mode, which usually means clearing highlights too.
+                clearHighlighter();
 
             } catch (err) {
                 console.error('Extraction failed:', err);
