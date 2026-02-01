@@ -5,7 +5,8 @@
     let panelContainer = null;
     let isPanelVisible = false;
     let currentYaml = '';
-    const isLiterotica = window.location.hostname.includes('literotica.com');
+    const ENABLED_SITES = ['literotica.com'];
+    const isCurrentSiteEnabled = ENABLED_SITES.some(site => window.location.hostname.includes(site));
 
     // Insert Prism styles and scripts
     function injectPrism() {
@@ -28,8 +29,10 @@
         document.head.appendChild(prismJs);
     }
 
-    function initializePanel() {
+    function initializePanel(force = false) {
         if (panelContainer) return;
+        if (!isCurrentSiteEnabled && !force) return;
+
         injectPrism();
         createPanel();
     }
@@ -303,8 +306,10 @@
 
     function togglePanelVisibility() {
         if (!panelContainer) {
-            createPanel();
+            initializePanel(true);
         }
+        if (!panelContainer) return; // Should not happen with force=true
+
         isPanelVisible = !isPanelVisible;
         panelContainer.classList.toggle('closed', !isPanelVisible);
         const toggleBtn = panelContainer.querySelector('.story-panel-toggle');
