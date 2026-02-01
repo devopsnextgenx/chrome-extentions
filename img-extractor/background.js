@@ -544,6 +544,12 @@ function resolveFullSizeUrl(url) {
         // https://cdn1337.pichunter.com/media/posts/12--5362895/conversions/361680-12fcebedb579f11881d3e0746709118d-post_single_big.jpg
         path = path.replace('post_archive_thumb', 'post_single_big');
     }
+
+    if (parsedUrl.origin.includes('pornpics')) {
+        // https://cdni.pornpics.com/460/7/186/75745941/75745941_026_6342.jpg
+        // https://cdni.pornpics.com/1280/7/186/75745941/75745941_026_6342.jpg
+        path = path.replace('460', '1280');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
     return origin + path.replaceAll('//', '/') + parsedUrl.search;
