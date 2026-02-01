@@ -320,10 +320,10 @@
         const escapedTitle = (title || 'unknown').replace(/"/g, '\\"');
         const escapedDescription = (description || '').replace(/"/g, '\\"');
         return `
-    - path: stories/thread-${threadNumber}/ymls
-      title: "Original ${escapedTitle}"
-      description: "${escapedDescription}"
-      searchPrioritize: true
+  - path: stories/thread-${threadNumber}/ymls
+    title: "Original ${escapedTitle}"
+    description: "${escapedDescription}"
+    searchPrioritize: true
 `;
     }
 

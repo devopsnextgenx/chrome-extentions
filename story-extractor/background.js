@@ -41,12 +41,11 @@ async function handleDownloadAll({ threadNumber, fileName, yamlStr, images, titl
     if (isFirstPage) {
         const escapedTitle = (title || 'unknown').replace(/"/g, '\\"');
         const escapedDescription = (description || '').replace(/"/g, '\\"');
-        const storiesYaml = `content:
-  stories:
-    - path: stories/thread-${safeThread}/ymls
-      title: "Original ${escapedTitle}"
-      description: "${escapedDescription}"
-      searchPrioritize: true
+        const storiesYaml = `
+  - path: stories/thread-${safeThread}/ymls
+    title: "Original ${escapedTitle}"
+    description: "${escapedDescription}"
+    searchPrioritize: true
 `;
         const storiesDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(storiesYaml)));
         await chrome.downloads.download({
