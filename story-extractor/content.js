@@ -71,7 +71,9 @@
                                     threadNumber,
                                     fileName,
                                     yamlStr,
-                                    images: data.images || []
+                                    images: data.images || [],
+                                    title: data.title,
+                                    description: data.description
                                 }
                             }, (downloadResponse) => {
                                 if (downloadResponse && downloadResponse.success) {
@@ -306,14 +308,25 @@
             });
         }
 
+        const pageTitle = document.querySelector('h1')?.textContent?.trim() || document.title;
+        const firstPostWithContent = posts.find(p => p.content.trim().length > 0);
+        const description = (firstPostWithContent?.content || "")
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .slice(0, 3)
+            .join(' ');
+
         return {
             metadata: {
-                title: document.title,
+                title: pageTitle,
                 extracted_at: extractedAt,
                 page_number: 1,
                 source_url: window.location.href,
                 total_posts: posts.length
             },
+            title: pageTitle,
+            description: description,
             posts: posts,
             images: posts.flatMap(p => p.images || [])
         };

@@ -92,7 +92,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             threadNumber,
                             fileName,
                             yamlStr,
-                            images: response.data.images || []
+                            images: response.data.images || [],
+                            title: response.data.title,
+                            description: response.data.description
                         }
                     }, (downloadResponse) => {
                         if (downloadResponse && downloadResponse.success) {

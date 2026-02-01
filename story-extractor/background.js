@@ -9,11 +9,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-async function handleDownloadAll({ threadNumber, fileName, yamlStr, images }) {
+async function handleDownloadAll({ threadNumber, fileName, yamlStr, images, title, description }) {
     const sanitize = (s) => String(s).trim().replace(/[<>:"|?*]/g, '_');
 
     const safeThread = sanitize(threadNumber) || 'unknown';
     const safeFile = sanitize(fileName) || '1';
+
+    // 0. Download root stories.yml if it's the first page
+    const isFirstPage = safeFile === '1' || safeFile === 'page_1';
+    if (isFirstPage) {
+        const escapedTitle = (title || 'unknown').replace(/"/g, '\\"');
+        const escapedDescription = (description || '').replace(/"/g, '\\"');
+        const storiesYaml = `stories:
+  - path: stories/thread-${safeThread}/ymls
+    title: "Original ${escapedTitle}"
+    description: "${escapedDescription}"
+    searchPrioritize: true
+`;
+        const storiesDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(storiesYaml)));
+        await chrome.downloads.download({
+            url: storiesDataUrl,
+            filename: 'stories.yml',
+            conflictAction: 'overwrite',
+            saveAs: false
+        });
+    }
 
     const rootFolder = `stories/thread-${safeThread}`;
     const yamlDir = `${rootFolder}/ymls`;
