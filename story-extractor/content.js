@@ -2,121 +2,358 @@
     let hoverElement = null;
     let selectedElement = null;
     let isSelecting = false;
-    let uiContainer = null;
+    let panelContainer = null;
+    let isPanelVisible = false;
+    let currentYaml = '';
+    const isLiterotica = window.location.hostname.includes('literotica.com');
 
-    // Listen for messages from popup
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'toggleSelection') {
-            isSelecting = !isSelecting;
-            if (isSelecting) {
-                createUI();
-            } else {
-                removeUI();
-                clearHighlighter();
+    // Insert Prism styles and scripts
+    function injectPrism() {
+        if (window.Prism) return; // Already injected
+
+        // Inject CSS
+        const prismCss = document.createElement('link');
+        prismCss.rel = 'stylesheet';
+        prismCss.href = chrome.runtime.getURL('libs/prism.css');
+        document.head.appendChild(prismCss);
+
+        // Inject JS
+        const prismJs = document.createElement('script');
+        prismJs.src = chrome.runtime.getURL('libs/prism.js');
+        prismJs.onload = () => {
+            if (window.Prism && window.Prism.highlightAll) {
+                window.Prism.highlightAll();
             }
-            sendResponse({ isSelecting });
-        } else if (request.action === 'extract') {
-            if (!selectedElement) {
-                sendResponse({ error: 'No element selected' });
-                return;
-            }
-            const data = extractData(selectedElement);
-            sendResponse({ data });
-        } else if (request.action === 'getStatus') {
-            sendResponse({ isSelecting, hasSelection: !!selectedElement });
+        };
+        document.head.appendChild(prismJs);
+    }
+
+    function initializePanel() {
+        if (panelContainer) return;
+        injectPrism();
+        createPanel();
+    }
+
+
+
+    // Keyboard shortcut: Ctrl+Shift+L to toggle panel display
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.code === 'KeyL') {
+            e.preventDefault();
+            togglePanelVisibility();
         }
     });
 
-    function createUI() {
-        if (uiContainer) return;
+    function createPanel() {
+        if (panelContainer) return;
 
-        uiContainer = document.createElement('div');
-        uiContainer.id = 'story-extractor-ui';
-        uiContainer.innerHTML = `
-            <div class="story-ui-header"><span>📖</span> Story Extractor</div>
-            <div class="story-ui-status" id="story-ui-status">Hover and click an element</div>
-            <div class="story-ui-controls">
-                <button class="story-ui-btn story-ui-btn-secondary" id="story-ui-cancel">Cancel</button>
-                <button class="story-ui-btn story-ui-btn-primary" id="story-ui-extract" disabled>Extract</button>
+        panelContainer = document.createElement('div');
+        panelContainer.id = 'story-extractor-panel';
+        panelContainer.innerHTML = `
+            <div class="story-panel-header">
+                <div class="story-panel-title">
+                    <span>📖</span> Story Extractor
+                </div>
+                <button class="story-panel-toggle" title="Toggle panel (Ctrl+Shift+L)">▼</button>
+            </div>
+            <div class="story-panel-content">
+                <div class="story-input-group">
+                    <div class="story-input-item">
+                        <label for="story-thread-number">Thread #</label>
+                        <input type="text" id="story-thread-number" placeholder="e.g., 123" class="story-input">
+                    </div>
+                    <div class="story-input-item">
+                        <label for="story-file-name">Page #</label>
+                        <input type="text" id="story-file-name" placeholder="e.g., 1" class="story-input">
+                    </div>
+                </div>
+                
+                <label class="story-checkbox-label">
+                    <input type="checkbox" id="story-direct-save" class="story-checkbox">
+                    Auto Download
+                </label>
+
+                <div class="story-panel-actions">
+                    <button class="story-select-btn" id="story-select-btn">✨ Select</button>
+                    <button class="story-extract-btn" id="story-extract-btn" disabled>🔍 Extract</button>
+                </div>
+
+                <div class="story-instructions">YAML will appear here</div>
+                <div class="story-yaml-container">
+                    <pre><code id="story-yaml-display" class="language-yaml"></code></pre>
+                </div>
+                <div class="story-panel-buttons">
+                    <button class="story-copy-btn" id="story-copy-yaml" disabled>📋 Copy & Save</button>
+                </div>
             </div>
         `;
 
-        document.body.appendChild(uiContainer);
+        document.body.appendChild(panelContainer);
 
-        uiContainer.querySelector('#story-ui-cancel').addEventListener('click', () => {
-            isSelecting = false;
-            removeUI();
-            clearHighlighter();
-            chrome.runtime.sendMessage({ action: 'selectionCanceled' });
+        // Load saved settings
+        chrome.storage.local.get(['threadNumber', 'fileName', 'directSave'], (data) => {
+            const threadInput = panelContainer.querySelector('#story-thread-number');
+            const fileInput = panelContainer.querySelector('#story-file-name');
+            const directCheckbox = panelContainer.querySelector('#story-direct-save');
+
+            if (threadInput && data.threadNumber) threadInput.value = data.threadNumber;
+            if (fileInput && data.fileName) fileInput.value = data.fileName;
+            if (directCheckbox && data.directSave !== undefined) directCheckbox.checked = data.directSave;
         });
 
-        uiContainer.querySelector('#story-ui-extract').addEventListener('click', async () => {
-            if (selectedElement) {
-                const data = extractData(selectedElement);
+        // Toggle panel visibility
+        const toggleBtn = panelContainer.querySelector('.story-panel-toggle');
+        toggleBtn.addEventListener('click', togglePanelVisibility);
 
-                // Read settings from storage
-                chrome.storage.local.get(['threadNumber', 'fileName', 'directSave'], async (settings) => {
-                    const threadNumber = settings.threadNumber || 'unknown';
-                    const fileName = settings.fileName || 'page_1';
-                    const directSave = settings.directSave || false;
-                    const yamlStr = toYaml(data);
+        // Save settings on input change
+        const threadInput = panelContainer.querySelector('#story-thread-number');
+        const fileInput = panelContainer.querySelector('#story-file-name');
+        const directCheckbox = panelContainer.querySelector('#story-direct-save');
+        const extractBtn = panelContainer.querySelector('#story-extract-btn');
+        const selectBtn = panelContainer.querySelector('#story-select-btn');
 
-                    if (directSave) {
-                        try {
-                            updateUIStatus("Saving and downloading...");
+        const updateExtractBtnState = () => {
+            if (extractBtn) {
+                const hasInputs = threadInput.value.trim() && fileInput.value.trim();
+                const hasSelection = selectedElement !== null;
+                extractBtn.disabled = !(hasInputs && hasSelection);
 
-                            chrome.runtime.sendMessage({
-                                action: 'downloadAll',
-                                data: {
-                                    threadNumber,
-                                    fileName,
-                                    yamlStr,
-                                    images: data.images || [],
-                                    title: data.title,
-                                    description: data.description
-                                }
-                            }, (downloadResponse) => {
-                                if (downloadResponse && downloadResponse.success) {
-                                    updateUIStatus("Success! Check downloads folder.");
-                                    setTimeout(() => {
-                                        isSelecting = false;
-                                        removeUI();
-                                        clearHighlighter();
-                                        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
-                                    }, 2000);
-                                } else {
-                                    updateUIStatus("Error: " + (downloadResponse?.error || "Download failed."));
-                                }
-                            });
-                        } catch (err) {
-                            console.error('Download failed:', err);
-                            updateUIStatus("Error: Download failed.");
-                        }
-                    } else {
-                        showResult(data);
-                        isSelecting = false;
-                        removeUI();
-                        clearHighlighter();
-                        chrome.runtime.sendMessage({ action: 'selectionCanceled' });
-                    }
+                if (!hasInputs) {
+                    extractBtn.title = "Please fill Thread # and Page #";
+                } else if (!hasSelection) {
+                    extractBtn.title = "Please select an element from the page first";
+                } else {
+                    extractBtn.title = "Click to extract content from selected element";
+                }
+            }
+        };
+
+        // Select button - toggle selection mode
+        selectBtn.addEventListener('click', () => {
+            isSelecting = !isSelecting;
+
+            if (isSelecting) {
+                selectBtn.textContent = '🛑 Cancel Select';
+                selectBtn.classList.add('active');
+                updatePanelStatus('Hover and click an element');
+            } else {
+                clearHighlighter();
+                selectBtn.textContent = '✨ Select';
+                selectBtn.classList.remove('active');
+                updatePanelStatus('YAML will appear here');
+            }
+        });
+
+        [threadInput, fileInput, directCheckbox].forEach(el => {
+            if (el) {
+                el.addEventListener('change', () => {
+                    chrome.storage.local.set({
+                        threadNumber: threadInput.value,
+                        fileName: fileInput.value,
+                        directSave: directCheckbox.checked
+                    });
+                    updateExtractBtnState();
                 });
+                el.addEventListener('input', () => {
+                    chrome.storage.local.set({
+                        threadNumber: threadInput.value,
+                        fileName: fileInput.value,
+                        directSave: directCheckbox.checked
+                    });
+                    updateExtractBtnState();
+                });
+            }
+        });
+
+        // Initial state check
+        updateExtractBtnState();
+        extractBtn.addEventListener('click', async () => {
+            const threadNum = threadInput.value.trim();
+            const pageNum = fileInput.value.trim();
+
+            if (!threadNum || !pageNum) {
+                updatePanelStatus('⚠️ Fill Thread # and Page #');
+                setTimeout(() => updatePanelStatus('Element selected! Click Extract.'), 2000);
+                return;
+            }
+
+            if (!selectedElement) {
+                updatePanelStatus('⚠️ Select an element first');
+                setTimeout(() => updatePanelStatus('Hover and click an element'), 2000);
+                return;
+            }
+
+            try {
+                updatePanelStatus("🔍 Extracting...");
+                const data = extractData(selectedElement);
+                const yamlStr = toYaml(data);
+
+                // Update panel with both stories.yml and page YAML
+                updatePanelYaml(yamlStr, data, threadNum);
+
+                // Enable copy button
+                const copyBtn = panelContainer.querySelector('#story-copy-yaml');
+                if (copyBtn) {
+                    copyBtn.disabled = false;
+                }
+
+                if (directCheckbox.checked) {
+                    updatePanelStatus("💾 Saving and downloading...");
+                    chrome.runtime.sendMessage({
+                        action: 'downloadAll',
+                        data: {
+                            threadNumber: threadNum,
+                            fileName: pageNum,
+                            yamlStr: yamlStr,
+                            images: data.images || [],
+                            title: data.title,
+                            description: data.description
+                        }
+                    }, (downloadResponse) => {
+                        if (downloadResponse && downloadResponse.success) {
+                            updatePanelStatus("✓ Success! Saved to downloads.");
+                            setTimeout(() => updatePanelStatus("YAML generated"), 2000);
+                        } else {
+                            updatePanelStatus("✗ Error: " + (downloadResponse?.error || "Download failed."));
+                        }
+                    });
+                } else {
+                    updatePanelStatus("✓ Extraction complete!");
+                    setTimeout(() => updatePanelStatus("YAML generated"), 2000);
+                }
+
+                extractBtn.textContent = '✓ Ready!';
+                setTimeout(() => {
+                    extractBtn.textContent = '🔍 Extract';
+                }, 1500);
+
+            } catch (err) {
+                console.error('Extraction failed:', err);
+                updatePanelStatus("✗ Error: Extraction failed.");
+            }
+        });
+
+        // Copy & Save button - downloads page yml AND copies to clipboard
+        const copyBtn = panelContainer.querySelector('#story-copy-yaml');
+        copyBtn.addEventListener('click', async () => {
+            if (!currentYaml) return;
+
+            const threadNumber = threadInput.value.trim() || 'unknown';
+            const fileName = fileInput.value.trim() || 'page_1';
+
+            try {
+                // Background download message
+                const yamlDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(currentYaml)));
+                const pageYamlName = `page_${fileName}.yml`;
+
+                const downloadPromise = new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({
+                        action: 'downloadFile',
+                        data: {
+                            url: yamlDataUrl,
+                            filename: pageYamlName
+                        }
+                    }, (response) => {
+                        if (response && response.success) {
+                            resolve(response);
+                        } else {
+                            reject(new Error(response?.error || 'Download failed'));
+                        }
+                    });
+                });
+
+                // Copy to clipboard
+                let clipboardPromise;
+                try {
+                    clipboardPromise = navigator.clipboard.writeText(currentYaml);
+                } catch (err) {
+                    // Fallback for non-secure contexts or other failures
+                    const textArea = document.createElement("textarea");
+                    textArea.value = currentYaml;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        clipboardPromise = Promise.resolve();
+                    } catch (e) {
+                        clipboardPromise = Promise.reject(e);
+                    }
+                    document.body.removeChild(textArea);
+                }
+
+                // Wait for both to complete
+                await Promise.all([downloadPromise, clipboardPromise]);
+
+                copyBtn.textContent = '✓ Saved & Copied!';
+                copyBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 Copy & Save';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Error:', err);
+                copyBtn.textContent = '✗ Failed';
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 Copy & Save';
+                }, 2000);
             }
         });
     }
 
-    function removeUI() {
-        if (uiContainer) {
-            uiContainer.remove();
-            uiContainer = null;
+    function togglePanelVisibility() {
+        if (!panelContainer) {
+            createPanel();
+        }
+        isPanelVisible = !isPanelVisible;
+        panelContainer.classList.toggle('closed', !isPanelVisible);
+        const toggleBtn = panelContainer.querySelector('.story-panel-toggle');
+        toggleBtn.classList.toggle('collapsed', !isPanelVisible);
+    }
+
+    function generateStoriesYaml(title, description, threadNumber) {
+        const escapedTitle = (title || 'unknown').replace(/"/g, '\\"');
+        const escapedDescription = (description || '').replace(/"/g, '\\"');
+        return `
+    - path: stories/thread-${threadNumber}/ymls
+      title: "Original ${escapedTitle}"
+      description: "${escapedDescription}"
+      searchPrioritize: true
+`;
+    }
+
+    function updatePanelYaml(yamlStr, data, threadNumber) {
+        if (!panelContainer) {
+            createPanel();
+        }
+
+        // Generate root stories.yml
+        const storiesYaml = generateStoriesYaml(data.title, data.description, threadNumber || 'unknown');
+
+        // Combine both YAMLs for display
+        // const combinedYaml = `# ROOT stories.yml\n${storiesYaml}\n---\n# PAGE YAML (page_*.yml)\n${yamlStr}`;
+        const combinedYaml = `${storiesYaml}\n`;
+        currentYaml = combinedYaml;
+
+        // Update the YAML display
+        const codeDisplay = panelContainer.querySelector('#story-yaml-display');
+        if (codeDisplay) {
+            codeDisplay.textContent = combinedYaml;
+            // Use Prism to highlight if available
+            if (window.Prism && window.Prism.highlightElement) {
+                window.Prism.highlightElement(codeDisplay);
+            }
+        }
+
+        // Show panel
+        if (!isPanelVisible) {
+            togglePanelVisibility();
         }
     }
 
-    function updateUIStatus(msg, canExtract = false) {
-        if (!uiContainer) return;
-        const status = uiContainer.querySelector('#story-ui-status');
-        const extractBtn = uiContainer.querySelector('#story-ui-extract');
+    function updatePanelStatus(msg) {
+        if (!panelContainer) return;
+        const status = panelContainer.querySelector('.story-instructions');
         if (status) status.textContent = msg;
-        if (extractBtn) extractBtn.disabled = !canExtract;
     }
 
     function toYaml(obj, indent = 0, isArrayItem = false) {
@@ -152,33 +389,10 @@
         return String(obj);
     }
 
-    function showResult(data) {
-        const yamlStr = toYaml(data);
-        const modal = document.createElement('div');
-        modal.id = 'story-extractor-result';
-        modal.innerHTML = `
-            <div class="story-result-header">
-                <div class="story-ui-header"><span>✅</span> Extracted Content (YAML)</div>
-                <button class="story-close-result">×</button>
-            </div>
-            <div class="story-result-content">${yamlStr}</div>
-            <div class="story-ui-controls">
-                <button class="story-ui-btn story-ui-btn-primary" id="story-copy-res">Copy YAML</button>
-            </div>
-        `;
 
-        document.body.appendChild(modal);
-
-        modal.querySelector('.story-close-result').addEventListener('click', () => modal.remove());
-        modal.querySelector('#story-copy-res').addEventListener('click', () => {
-            navigator.clipboard.writeText(yamlStr);
-            modal.querySelector('#story-copy-res').textContent = 'Copied!';
-            setTimeout(() => modal.querySelector('#story-copy-res').textContent = 'Copy YAML', 2000);
-        });
-    }
 
     function onMouseOver(e) {
-        if (!isSelecting || selectedElement || (uiContainer && uiContainer.contains(e.target))) return;
+        if (!isSelecting || selectedElement || (panelContainer && panelContainer.contains(e.target))) return;
 
         if (hoverElement) {
             hoverElement.classList.remove('story-extractor-highlight');
@@ -189,7 +403,7 @@
     }
 
     function onClick(e) {
-        if (!isSelecting || (uiContainer && uiContainer.contains(e.target))) return;
+        if (!isSelecting || (panelContainer && panelContainer.contains(e.target))) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -202,10 +416,19 @@
         selectedElement.classList.add('story-extractor-selected');
         selectedElement.classList.remove('story-extractor-highlight');
 
-        updateUIStatus("Element selected! Click Extract.", true);
+        updatePanelStatus("Element selected! Click Extract.");
 
-        // Notify popup if it's open
-        chrome.runtime.sendMessage({ action: 'elementSelected' });
+        // Enable/Update extract button in panel
+        if (panelContainer) {
+            const panelExtractBtn = panelContainer.querySelector('#story-extract-btn');
+            if (panelExtractBtn) {
+                const threadInput = panelContainer.querySelector('#story-thread-number');
+                const fileInput = panelContainer.querySelector('#story-file-name');
+                const hasInputs = threadInput?.value.trim() && fileInput?.value.trim();
+                panelExtractBtn.disabled = !hasInputs;
+                panelExtractBtn.title = hasInputs ? "Click to extract" : "Fill inputs first";
+            }
+        }
     }
 
     function clearHighlighter() {
@@ -217,7 +440,7 @@
             selectedElement.classList.remove('story-extractor-selected');
             selectedElement = null;
         }
-        updateUIStatus("Hover and click an element", false);
+        updatePanelStatus("Hover and click an element");
     }
 
     function extractData(el) {
@@ -334,4 +557,18 @@
 
     document.addEventListener('mouseover', onMouseOver, true);
     document.addEventListener('click', onClick, true);
+
+    // Listen for toggle message from background
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === "togglePanel") {
+            togglePanelVisibility();
+        }
+    });
+
+    // Initialize panel on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializePanel);
+    } else {
+        initializePanel();
+    }
 })();

@@ -7,6 +7,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(err => sendResponse({ success: false, error: err.message }));
         return true;
     }
+    if (request.action === 'downloadFile') {
+        const { url, filename } = request.data;
+        chrome.downloads.download({
+            url: url,
+            filename: filename,
+            conflictAction: 'overwrite',
+            saveAs: false
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+                sendResponse({ success: true, downloadId });
+            }
+        });
+        return true;
+    }
+});
+
+// Toggle side panel when extension icon is clicked
+chrome.action.onClicked.addListener((tab) => {
+    chrome.tabs.sendMessage(tab.id, { action: 'togglePanel' });
 });
 
 async function handleDownloadAll({ threadNumber, fileName, yamlStr, images, title, description }) {
@@ -20,11 +41,12 @@ async function handleDownloadAll({ threadNumber, fileName, yamlStr, images, titl
     if (isFirstPage) {
         const escapedTitle = (title || 'unknown').replace(/"/g, '\\"');
         const escapedDescription = (description || '').replace(/"/g, '\\"');
-        const storiesYaml = `stories:
-  - path: stories/thread-${safeThread}/ymls
-    title: "Original ${escapedTitle}"
-    description: "${escapedDescription}"
-    searchPrioritize: true
+        const storiesYaml = `content:
+  stories:
+    - path: stories/thread-${safeThread}/ymls
+      title: "Original ${escapedTitle}"
+      description: "${escapedDescription}"
+      searchPrioritize: true
 `;
         const storiesDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(storiesYaml)));
         await chrome.downloads.download({
