@@ -238,29 +238,29 @@
         copyBtn.addEventListener('click', async () => {
             if (!currentYaml) return;
 
-            const threadNumber = threadInput.value.trim() || 'unknown';
-            const fileName = fileInput.value.trim() || 'page_1';
+            // const threadNumber = threadInput.value.trim() || 'unknown';
+            // const fileName = fileInput.value.trim() || 'page_1';
 
             try {
-                // Background download message
-                const yamlDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(currentYaml)));
-                const pageYamlName = `page_${fileName}.yml`;
+                // // Background download message
+                // const yamlDataUrl = 'data:text/yaml;base64,' + btoa(unescape(encodeURIComponent(currentYaml)));
+                // const pageYamlName = `page_${fileName}.yml`;
 
-                const downloadPromise = new Promise((resolve, reject) => {
-                    chrome.runtime.sendMessage({
-                        action: 'downloadFile',
-                        data: {
-                            url: yamlDataUrl,
-                            filename: pageYamlName
-                        }
-                    }, (response) => {
-                        if (response && response.success) {
-                            resolve(response);
-                        } else {
-                            reject(new Error(response?.error || 'Download failed'));
-                        }
-                    });
-                });
+                // const downloadPromise = new Promise((resolve, reject) => {
+                //     chrome.runtime.sendMessage({
+                //         action: 'downloadFile',
+                //         data: {
+                //             url: yamlDataUrl,
+                //             filename: pageYamlName
+                //         }
+                //     }, (response) => {
+                //         if (response && response.success) {
+                //             resolve(response);
+                //         } else {
+                //             reject(new Error(response?.error || 'Download failed'));
+                //         }
+                //     });
+                // });
 
                 // Copy to clipboard
                 let clipboardPromise;
@@ -282,7 +282,8 @@
                 }
 
                 // Wait for both to complete
-                await Promise.all([downloadPromise, clipboardPromise]);
+                // await Promise.all([downloadPromise, clipboardPromise]);
+                await Promise.all([clipboardPromise]);
 
                 copyBtn.textContent = '✓ Saved & Copied!';
                 copyBtn.classList.add('copied');
