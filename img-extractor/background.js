@@ -550,6 +550,12 @@ function resolveFullSizeUrl(url) {
         // https://cdni.pornpics.com/1280/7/186/75745941/75745941_026_6342.jpg
         path = path.replace('460', '1280');
     }
+
+    if (parsedUrl.origin.includes('chiloka')) {
+        // https://chiloka.com/i/i/a/n/u/anuradha-mehta-7-m.jpg
+        // https://chiloka.com/i/i/a/n/u/anuradha-mehta-7.jpg
+        path = path.replace('-m.jpg', '.jpg');
+    }
     // Resolved URL: https://www.idlebrain.com | /images/sample_r18_c08.gif |
     console.log(`Resolved URL: ${parsedUrl.origin} | ${path} |${parsedUrl.search}`);
     return origin + path.replaceAll('//', '/') + parsedUrl.search;
