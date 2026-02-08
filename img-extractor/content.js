@@ -26,6 +26,10 @@
   let instagramMaxArea = 0;
   let instagramScanTimer = null;
 
+  let infiniteScrollInterval = null;
+  let lastScrollHeight = 0;
+  let scrollFailureCount = 0;
+
   // Helper function to check if current site is in allowed list
   function isAllowedSite() {
     const hostname = window.location.hostname;
@@ -83,7 +87,7 @@
   window.addEventListener('message', (event) => {
     // Only accept messages from the same window
     if (event.source !== window) return;
-    
+
     if (event.data.type === 'IMG_EXTRACTOR_START_MONITORING') {
       startInstagramMonitoring(event.data.options);
     } else if (event.data.type === 'IMG_EXTRACTOR_STOP_MONITORING') {
@@ -110,6 +114,9 @@
                 </div>
             </div>
             <div class="panel-content" id="panel-content">
+                <div class="panel-button-group">
+                    <button class="panel-button primary" id="panel-scroll-infitintly">Scroll Infitintly</button>
+                </div>
                 <div class="panel-form-group">
                     <label for="panel-default-location">Default Location</label>
                     <input type="text" id="panel-default-location" placeholder="e.g., actresses" value="">
@@ -217,11 +224,11 @@
     const indicator = uiContainer.querySelector('#img-ui-indicator');
     const cancelBtn = uiContainer.querySelector('#img-ui-cancel');
     const downloadBtn = uiContainer.querySelector('#img-ui-download');
-    
+
     if (minimizeBtn) {
       minimizeBtn.addEventListener('click', toggleMinimize);
     }
-    
+
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
         if (uiContainer) {
@@ -234,11 +241,16 @@
       });
     }
 
+    const scrollInfitintlyBtn = uiContainer.querySelector('#panel-scroll-infitintly');
+    if (scrollInfitintlyBtn) {
+      scrollInfitintlyBtn.addEventListener('click', toggleInfiniteScroll);
+    }
+
     // Settings input handlers
     if (defaultLocationInput) {
       defaultLocationInput.addEventListener('input', savePanelSettings);
     }
-    
+
     if (actressNameInput) {
       actressNameInput.addEventListener('input', savePanelSettings);
     }
@@ -249,7 +261,10 @@
       const stopMonitoringBtn = uiContainer.querySelector('#panel-stop-monitoring');
       const downloadImagesBtn = uiContainer.querySelector('#panel-download-images');
       const downloadVideosBtn = uiContainer.querySelector('#panel-download-videos');
-      
+      if (scrollInfitintlyBtn) {
+        scrollInfitintlyBtn.addEventListener('click', toggleInfiniteScroll);
+      }
+
       if (startMonitoringBtn) {
         startMonitoringBtn.addEventListener('click', () => {
           const options = {
@@ -259,11 +274,11 @@
           startInstagramMonitoring(options);
         });
       }
-      
+
       if (stopMonitoringBtn) {
         stopMonitoringBtn.addEventListener('click', stopInstagramMonitoring);
       }
-      
+
       if (downloadImagesBtn) {
         downloadImagesBtn.addEventListener('click', () => {
           const options = {
@@ -273,7 +288,7 @@
           extractInstagramImages(options, 'images');
         });
       }
-      
+
       if (downloadVideosBtn) {
         downloadVideosBtn.addEventListener('click', () => {
           const options = {
@@ -429,12 +444,54 @@
     savePanelSettings();
   }
 
+  function toggleInfiniteScroll() {
+    if (!uiContainer) return;
+    const btn = uiContainer.querySelector('#panel-scroll-infitintly');
+    if (!btn) return;
+    if (infiniteScrollInterval) {
+      // Stop scrolling
+      clearInterval(infiniteScrollInterval);
+      infiniteScrollInterval = null;
+      btn.textContent = 'Scroll Infitintly';
+      btn.classList.remove('active');
+      updateUIStatus('Infinite scroll stopped');
+    } else {
+      // Start scrolling
+      lastScrollHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+      scrollFailureCount = 0;
+      btn.textContent = 'Stop Scrolling';
+      btn.classList.add('active');
+      updateUIStatus('Infinite scroll started');
+
+      infiniteScrollInterval = setInterval(() => {
+        window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
+
+        setTimeout(() => {
+          const currentScrollHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+
+          if (currentScrollHeight === lastScrollHeight) {
+            scrollFailureCount++;
+            console.log(`Scroll attempt ${scrollFailureCount}: No new content loaded`);
+
+            if (scrollFailureCount >= 3) {
+              toggleInfiniteScroll(); // Stop if 3 failures
+              updateUIStatus('Reached end of page or no new content');
+            }
+          } else {
+            scrollFailureCount = 0; // Reset on success
+            lastScrollHeight = currentScrollHeight;
+          }
+        }, 500); // Wait for content to potentially load
+      }, 1500); // Scroll every 1.5 seconds
+    }
+  }
+
   function savePanelSettings() {
     if (!uiContainer) return;
-    
+
     const defaultLocationInput = uiContainer.querySelector('#panel-default-location');
     const actressNameInput = uiContainer.querySelector('#panel-actress-name');
-    
+
     const settings = {
       defaultLocation: defaultLocationInput ? defaultLocationInput.value : 'actresses',
       actressName: actressNameInput ? actressNameInput.value : '',
@@ -445,24 +502,24 @@
         visible: uiContainer.style.display !== 'none'
       }
     };
-    
+
     chrome.storage.local.set(settings);
   }
 
   function loadPanelSettings() {
     if (!uiContainer) return;
-    
+
     chrome.storage.local.get(['defaultLocation', 'actressName', 'panelState'], (result) => {
       const defaultLocationInput = uiContainer.querySelector('#panel-default-location');
       const actressNameInput = uiContainer.querySelector('#panel-actress-name');
-      
+
       if (result.defaultLocation && defaultLocationInput) {
         defaultLocationInput.value = result.defaultLocation;
       }
       if (result.actressName && actressNameInput) {
         actressNameInput.value = result.actressName;
       }
-      
+
       if (result.panelState) {
         const state = result.panelState;
         xOffset = state.x || 0;
@@ -695,7 +752,7 @@
       if (progressArea) {
         progressArea.style.display = 'block';
         progressArea.dataset.batchId = batchId;
-        
+
         // Setup cancel handler
         const cancelBtn = progressArea.querySelector('#panel-progress-cancel');
         if (cancelBtn) {
@@ -706,7 +763,7 @@
             progressArea.classList.add('cancelling');
           };
         }
-        
+
         // Setup continue now handler
         const continueBtn = progressArea.querySelector('#panel-continue-now');
         if (continueBtn) {
@@ -718,11 +775,11 @@
             if (status) status.textContent = 'Resuming...';
           };
         }
-        
+
         return progressArea;
       }
     }
-    
+
     // Fallback to old method
     ensureProgressContainer();
     const card = document.createElement('div');
@@ -783,7 +840,7 @@
 
     // Check if using panel progress area
     const isPanelProgress = card.id === 'panel-progress-area';
-    
+
     if (isPanelProgress) {
       const progressBar = card.querySelector('#panel-progress-bar');
       const progressText = card.querySelector('#panel-progress-text');
@@ -868,7 +925,7 @@
 
     // Check if using panel progress area
     const isPanelProgress = card.id === 'panel-progress-area';
-    
+
     if (isPanelProgress) {
       const countdown = card.querySelector('#panel-progress-countdown');
       const countdownTime = card.querySelector('#panel-countdown-time');
@@ -1214,7 +1271,7 @@
           options: options,
           tabUrl: window.location.href
         });
-        
+
         // Send completion message to Instagram panel
         window.postMessage({
           type: 'IMG_EXTRACTOR_EXTRACTION_COMPLETE',
@@ -1223,13 +1280,13 @@
         }, '*');
       }).catch(error => {
         console.error('Error converting blob URLs:', error);
-        
+
         // Send error message to Instagram panel
         window.postMessage({
           type: 'IMG_EXTRACTOR_EXTRACTION_FAILED',
           reason: `Failed to process ${mediaTypeLabel}: ${error.message}`
         }, '*');
-        
+
         chrome.runtime.sendMessage({
           action: 'instagram-extraction-failed',
           reason: `Failed to process ${mediaTypeLabel}: ${error.message}`
@@ -1241,7 +1298,7 @@
         type: 'IMG_EXTRACTOR_EXTRACTION_FAILED',
         reason: `No ${mediaTypeLabel} found.`
       }, '*');
-      
+
       chrome.runtime.sendMessage({ action: 'instagram-extraction-failed', reason: `No ${mediaTypeLabel} found.` });
     }
   }
@@ -1733,7 +1790,7 @@
         startBtn.style.display = 'none';
         stopBtn.style.display = 'block';
         if (monitoringStatus) monitoringStatus.style.display = 'block';
-        
+
         if (folderPath && folderContainer && folderPathElem) {
           folderPathElem.textContent = folderPath.split('/').pop();
           folderContainer.style.display = 'block';
@@ -1778,18 +1835,18 @@
           const dialog = document.querySelector('div[role="dialog"]');
           if (dialog && !instagramMonitoring) {
             console.log('Instagram post detected, auto-starting monitoring...');
-            
+
             // Get current settings
             chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
               const options = {
                 defaultLocation: data.defaultLocation || 'actresses',
                 actressName: data.actressName || ''
               };
-              
+
               // Auto-start monitoring
               startInstagramMonitoring(options);
             });
-            
+
             break;
           }
         }
@@ -1806,13 +1863,13 @@
     const urlPath = window.location.pathname;
     if (urlPath.includes('/p/') || urlPath.includes('/reel/')) {
       console.log('Already on Instagram post page, auto-starting monitoring...');
-      
+
       chrome.storage.local.get(['defaultLocation', 'actressName'], (data) => {
         const options = {
           defaultLocation: data.defaultLocation || 'actresses',
           actressName: data.actressName || ''
         };
-        
+
         setTimeout(() => {
           startInstagramMonitoring(options);
         }, 500); // Wait a bit for content to load

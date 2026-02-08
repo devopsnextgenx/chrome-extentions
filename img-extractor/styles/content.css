@@ -528,6 +528,12 @@
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
+.panel-button.primary.active {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    transform: translateY(1px);
+}
+
 .panel-button.secondary {
     background: #f0f0f0;
     color: #262626;

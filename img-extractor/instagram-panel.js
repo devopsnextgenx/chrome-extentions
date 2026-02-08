@@ -20,6 +20,10 @@
     let xOffset = 0;
     let yOffset = 0;
 
+    let infiniteScrollInterval = null;
+    let lastScrollHeight = 0;
+    let scrollFailureCount = 0;
+
     /**
      * Create and inject the floating panel
      */
@@ -44,9 +48,12 @@
                 </div>
             </div>
             <div class="panel-content" id="panel-content">
+                <div class="panel-button-group">
+                    <button class="panel-button primary" id="panel-scroll-infitintly">Scroll Infitintly</button>
+                </div>
                 <div class="panel-form-group">
                     <label for="panel-default-location">Default Location</label>
-                    <input type="text" id="panel-default-location" placeholder="e.g., Images/Actress" value="actresses">
+                    <input type="text" id="panel-default-location" placeholder="e.g., Images/Actresses" value="actresses">
                 </div>
                 
                 <div class="panel-form-group">
@@ -128,6 +135,7 @@
         document.getElementById('panel-stop-monitoring').addEventListener('click', stopMonitoring);
         document.getElementById('panel-download-images').addEventListener('click', downloadImages);
         document.getElementById('panel-download-videos').addEventListener('click', downloadVideos);
+        document.getElementById('panel-scroll-infitintly').addEventListener('click', toggleInfiniteScroll);
 
         // Settings inputs
         document.getElementById('panel-default-location').addEventListener('input', saveSettings);
@@ -262,6 +270,50 @@
             actressName: document.getElementById('panel-actress-name').value
         };
         chrome.storage.local.set(settings);
+    }
+
+    /**
+     * Toggle infinite scroll
+     */
+    function toggleInfiniteScroll() {
+        const btn = document.getElementById('panel-scroll-infitintly');
+
+        if (infiniteScrollInterval) {
+            // Stop scrolling
+            clearInterval(infiniteScrollInterval);
+            infiniteScrollInterval = null;
+            btn.textContent = 'Scroll Infitintly';
+            btn.classList.remove('active');
+            showStatus('Infinite scroll stopped', 'info');
+        } else {
+            // Start scrolling
+            lastScrollHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+            scrollFailureCount = 0;
+            btn.textContent = 'Stop Scrolling';
+            btn.classList.add('active');
+            showStatus('Infinite scroll started', 'info');
+
+            infiniteScrollInterval = setInterval(() => {
+                window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
+
+                setTimeout(() => {
+                    const currentScrollHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+
+                    if (currentScrollHeight === lastScrollHeight) {
+                        scrollFailureCount++;
+                        console.log(`Scroll attempt ${scrollFailureCount}: No new content loaded`);
+
+                        if (scrollFailureCount >= 3) {
+                            toggleInfiniteScroll(); // Stop if 3 failures
+                            showStatus('Reached end of page or no new content', 'success');
+                        }
+                    } else {
+                        scrollFailureCount = 0; // Reset on success
+                        lastScrollHeight = currentScrollHeight;
+                    }
+                }, 500); // Wait for content to potentially load
+            }, 1500); // Scroll every 1.5 seconds
+        }
     }
 
     /**
